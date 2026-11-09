@@ -1,0 +1,3 @@
+[submodule "reference/LogicCircuit"]
+	path = reference/LogicCircuit
+	url = https://github.com/eugenelepekhin/LogicCircuit.git

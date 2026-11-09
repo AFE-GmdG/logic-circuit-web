@@ -1,0 +1,259 @@
+{
+  /* ----------------------- */
+  /* --- Folders Section --- */
+  /* ----------------------- */
+  "folders": [
+    {
+      "name": "Logic Circuit",
+      "path": ".",
+    }
+  ],
+  /* ------------------------ */
+  /* --- Settings Section --- */
+  /* ------------------------ */
+  "settings": {
+    // Editor Basics
+    "editor.detectIndentation": true,
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "files.eol": "\n",
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+
+    // Clean Explorer: Hide Things we don't care about
+    "files.exclude": {
+      ".git": true,
+      "dist": false, // sometimes useful to see, hide when not necessary
+      "node_modules": true, // only clutter
+      "*eslint*": false,
+      ".gitignore": true,
+      "*lock.json": true,
+      "*.lock": true,
+      "*.log": true,
+    },
+
+    "[markdown]": {
+      "files.trimTrailingWhitespace": false
+    },
+
+    // TypeScript Settings
+    "typescript.preferences.importModuleSpecifier": "project-relative",
+    "typescript.preferences.quoteStyle": "double",
+    "typescript.suggest.autoImports": false,
+    "typescript.suggest.paths": true,
+    "typescript.updateImportsOnFileMove.enabled": "never",
+    "typescript.format.insertSpaceAfterCommaDelimiter": true,
+    "typescript.format.insertSpaceAfterSemicolonInForStatements": true,
+    "typescript.format.insertSpaceBeforeAndAfterBinaryOperators": true,
+    "typescript.format.insertSpaceAfterKeywordsInControlFlowStatements": true,
+    "typescript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": true,
+    "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": false,
+    "typescript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": false,
+    "typescript.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": false,
+    "typescript.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": false,
+    "typescript.format.placeOpenBraceOnNewLineForFunctions": false,
+    "typescript.format.placeOpenBraceOnNewLineForControlBlocks": false,
+    "typescript.tsdk": "node_modules/typescript/lib",
+
+    // JavaScript Settings
+    "javascript.preferences.importModuleSpecifier": "project-relative",
+    "javascript.preferences.quoteStyle": "double",
+    "javascript.format.insertSpaceAfterCommaDelimiter": true,
+    "javascript.format.insertSpaceAfterSemicolonInForStatements": true,
+    "javascript.format.insertSpaceBeforeAndAfterBinaryOperators": true,
+    "javascript.format.insertSpaceAfterKeywordsInControlFlowStatements": true,
+    "javascript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": true,
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis": false,
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets": false,
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces": false,
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces": false,
+    "javascript.format.placeOpenBraceOnNewLineForFunctions": false,
+    "javascript.format.placeOpenBraceOnNewLineForControlBlocks": false,
+
+    // Better-Todo-Tree Settings
+    "better-todo-tree.general.tags": [
+      "BUG",
+      "HACK",
+      "FIXME",
+      "TODO",
+      "XXX",
+      "[ ]",
+      "[x]",
+      "DEBUG"
+    ],
+    "better-todo-tree.highlights.customHighlight": {
+      "BUG": {
+        "icon": "bug",
+        "background": "#FF0000",
+        "foreground": "#FFFFFF"
+      },
+      "HACK": {
+        "icon": "tools"
+      },
+      "FIXME": {
+        "icon": "flame"
+      },
+      "TODO": {
+        "icon": "check",
+        "background": "#FFAF33",
+        "foreground": "#000000",
+        "type": "text"
+      },
+      "XXX": {
+        "icon": "x"
+      },
+      "[ ]": {
+        "icon": "issue-draft"
+      },
+      "[x]": {
+        "icon": "issue-closed"
+      },
+      "DEBUG": {
+        "icon": "beaker",
+        "background": "#0000FF",
+        "foreground": "#FFFFFF",
+        "type": "whole-line"
+      }
+    }
+  },
+  /* ---------------------- */
+  /* --- Launch Section --- */
+  /* ---------------------- */
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Chrome (Debug Logic Circuit)",
+        "type": "chrome",
+        "request": "launch",
+        // Magic: Start the dev-server automatically before the debug session starts
+        "preLaunchTask": "Start Vite Server",
+        "url": "http://localhost:5173",
+        "webRoot": "${workspaceFolder:Logic Circuit}",
+        "sourceMaps": true,
+        "skipFiles": [
+          "<node_internals>/**",
+          "**/node_modules/**",
+        ],
+        "presentation": {
+          "hidden": false,
+          "group": "Debug",
+          "order": 1,
+        },
+      },
+    ],
+    "compounds": [],
+  },
+  /* --------------------- */
+  /* --- Tasks Section --- */
+  /* --------------------- */
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Start Vite Server",
+        "type": "process",
+        "command": "yarn",
+        "windows": {
+          "command": "yarn.cmd"
+        },
+        "args": [
+          "--cwd",
+          "${workspaceFolder:Logic Circuit}",
+          "dev",
+        ],
+        "isBackground": true,
+        // Vite Dev Server Problem Matcher
+        "problemMatcher": {
+          "owner": "vite",
+          "pattern": {
+            "regexp": "^$"
+          },
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "VITE",
+            "endsPattern": "ready"
+          },
+        },
+        "presentation": {
+          "reveal": "silent",
+          "panel": "shared",
+          "group": "none",
+        },
+        "promptOnClose": false,
+      },
+      {
+        "label": "Quality: Errorcheck",
+        "type": "process",
+        "command": "yarn",
+        "windows": {
+          "command": "yarn.cmd"
+        },
+        "args": [
+          "--cwd",
+          "${workspaceFolder:Logic Circuit}",
+          "errorcheck",
+        ],
+        "problemMatcher": "$tsc",
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared",
+        },
+      },
+      {
+        "label": "Quality: Lint",
+        "type": "process",
+        "command": "yarn",
+        "windows": {
+          "command": "yarn.cmd"
+        },
+        "args": [
+          "--cwd",
+          "${workspaceFolder:Logic Circuit}",
+          "lint",
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared",
+        },
+      },
+      {
+        "label": "Quality: Test",
+        "type": "process",
+        "command": "yarn",
+        "windows": {
+          "command": "yarn.cmd"
+        },
+        "args": [
+          "--cwd",
+          "${workspaceFolder:Logic Circuit}",
+          "test",
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared",
+        },
+      },
+      {
+        "label": "Build: Production",
+        "type": "process",
+        "command": "yarn",
+        "windows": {
+          "command": "yarn.cmd"
+        },
+        "args": [
+          "--cwd",
+          "${workspaceFolder:Logic Circuit}",
+          "build",
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared",
+        },
+      },
+    ],
+  },
+}

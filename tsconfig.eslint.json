@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true
+  },
+  "include": [
+    "src",
+    "scripts",
+    "eslint.config.js",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "reference"
+  ]
+}
+
