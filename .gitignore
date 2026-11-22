@@ -3,4 +3,10 @@ yarn-error.log*
 
 node_modules/
 dist/
-
+reference/*
+!reference/LogicCircuit
+!reference/OfficialSamples
+projects/
+.env
+.env.*
+!.env.example

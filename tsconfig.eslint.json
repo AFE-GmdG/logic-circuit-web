@@ -6,6 +6,7 @@
   "include": [
     "src",
     "scripts",
+    "server",
     "eslint.config.js",
     "vite.config.ts",
     "vitest.config.ts"
@@ -16,4 +17,3 @@
     "reference"
   ]
 }
-

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Logic Circuit - Web</title>
+    <title>Logic Circuit Web</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script type="module" crossorigin src="/src/index.tsx"></script>
     <style>
@@ -34,9 +34,49 @@
         --color-accent-primary: hsl(210, 100%, 60%);
         --color-accent-primary-hover: hsl(210, 100%, 68%);
         --color-accent-primary-bg: hsl(210, 80%, 18%);
+        --color-selection-fill: hsla(210, 100%, 60%, 0.15);
+        --color-ai-highlight: hsl(172, 75%, 52%);
 
         --color-status-running: hsl(135, 80%, 50%);
         --color-status-stopped: hsl(0, 75%, 55%);
+
+        /* Button & Toggle Colors */
+        --color-button-toggle-off: #384038;
+        --color-button-toggle-off-border: #222b22;
+        --color-button-toggle-on: #02fd02;
+        --color-button-toggle-on-border: #00aa00;
+        --color-button-toggle-on-glow: #02fd02;
+
+        /* Semantic UI Surfaces, Borders & Contrast Text */
+        --color-text-on-accent: #0b111a;
+        --color-text-on-strong: #ffffff;
+        --color-surface-hover: rgba(255, 255, 255, 0.08);
+        --color-surface-subtle: rgba(255, 255, 255, 0.02);
+        --color-tooltip-error-bg: rgba(33, 38, 45, 0.96);
+
+        --color-accent-tint-subtle: rgba(56, 139, 253, 0.08);
+        --color-accent-tint: rgba(56, 139, 253, 0.15);
+        --color-accent-tint-strong: rgba(56, 139, 253, 0.24);
+        --color-accent-highlight: rgba(56, 139, 253, 0.32);
+
+        --color-info-bg: rgba(34, 211, 238, 0.1);
+        --color-info-border: rgba(34, 211, 238, 0.3);
+        --color-candidate-fill: rgba(56, 189, 248, 0.22);
+        --color-ai-highlight-fill: rgba(45, 212, 191, 0.08);
+
+        --color-success-bg: rgba(46, 160, 67, 0.15);
+        --color-success-bg-strong: rgba(46, 160, 67, 0.25);
+        --color-success-border: rgba(34, 197, 94, 0.35);
+
+        --color-warning: #facc15;
+        --color-warning-bg: rgba(250, 204, 21, 0.12);
+        --color-warning-bg-strong: rgba(250, 204, 21, 0.24);
+        --color-warning-border: rgba(250, 204, 21, 0.38);
+
+        --color-error-text: #ffa198;
+        --color-error-text-soft: #ffd6d6;
+        --color-error-bg: hsla(0, 85%, 60%, 0.14);
+        --color-error-border: rgba(239, 68, 68, 0.35);
 
         --font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -46,6 +86,8 @@
         background-color: var(--color-bg-base);
         color: var(--color-text-primary);
         font-family: var(--font-family-base);
+
+        user-select: none;
       }
 
       body {
@@ -96,4 +138,3 @@
     <div id="root"></div>
   </body>
 </html>
-

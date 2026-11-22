@@ -2,52 +2,56 @@ import React from "react";
 
 import styled from "@emotion/styled";
 
+import CanvasContextProvider from "../../contexts/canvasContext/provider";
+import CircuitContextProvider from "../../contexts/circuitContext/provider";
+import SimulationContextProvider from "../../contexts/simulationContext/provider";
+
 import AppHeader from "./appHeader";
-import CircuitCanvas from "./circuitCanvas";
-import ComponentPalette from "./componentPalette";
+import SimulationErrorDialog from "./simulationErrorDialog";
+import CircuitCanvas from "../circuitCanvas";
+import ComponentPalette from "../componentPalette";
+import StatusBar from "../statusBar";
 
 type AppProps = React.ComponentPropsWithoutRef<"div">;
 
-const App = styled(({ ...other }: AppProps) => {
-  const [isRunning, setIsRunning] = React.useState(false);
-  const [zoom] = React.useState(1.0);
-
-  const handleToggleRun = React.useCallback(
-    () => {
-      setIsRunning((prev) => !prev);
-    },
-    [],
-  );
-
-  const handleStep = React.useCallback(
-    () => {
-      // Manueller Simulationsschritt (wird in US-005 implementiert)
-    },
-    [],
-  );
-
-  const handleReset = React.useCallback(
-    () => {
-      setIsRunning(false);
-    },
-    [],
-  );
-
+function isNativeContextMenuTarget(target: EventTarget | null): boolean {
+  if (!target || typeof (target as HTMLElement).tagName !== "string") {
+    return false;
+  }
+  const el = target as HTMLElement;
   return (
-    <div {...other} data-component="App">
-      <AppHeader
-        isRunning={isRunning}
-        onToggleRun={handleToggleRun}
-        onStep={handleStep}
-        onReset={handleReset}
-      />
-      <div className="workspace-container">
-        <ComponentPalette />
-        <CircuitCanvas zoom={zoom} />
-      </div>
-    </div>
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.isContentEditable
   );
-})({
+}
+
+const App = styled(({ ...other }: AppProps) => (
+  <CircuitContextProvider>
+    <SimulationContextProvider>
+      <CanvasContextProvider>
+        <div
+          {...other}
+          data-component="App"
+          onContextMenu={(event) => {
+            if (!isNativeContextMenuTarget(event.target)) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <AppHeader />
+          <div className="workspace-container">
+            <ComponentPalette />
+            <CircuitCanvas />
+          </div>
+          <StatusBar />
+          <SimulationErrorDialog />
+        </div>
+      </CanvasContextProvider>
+    </SimulationContextProvider>
+  </CircuitContextProvider>
+))({
   display: "flex",
   flexDirection: "column",
   width: "100vw",
@@ -58,7 +62,7 @@ const App = styled(({ ...other }: AppProps) => {
 
   "& > .workspace-container": {
     display: "flex",
-    flex: 1,
+    flex: "1 0 0",
     overflow: "hidden",
   },
 });

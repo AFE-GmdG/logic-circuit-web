@@ -22,6 +22,8 @@ Dieses Dokument definiert die verbindlichen Entwicklungs- und Formatierungsricht
 - **Dateibenennung & Komponenten-Verzeichnisse:**
   - Jede Hauptkomponente erhält ein eigenes Unterverzeichnis in `camelCase` unter `src/components/<componentName>/` mit einer `index.tsx` als Einstiegspunkt (z. B. `src/components/circuitCanvas/index.tsx`).
   - Zugehörige Subkomponenten werden im selben Verzeichnis als separate `camelCase.tsx`-Dateien angelegt (z. B. `canvasGrid.tsx`, `canvasOverlay.tsx`).
+  - Wiederverwendbare Subkomponenten (wie `ContextMenuPopup` in `src/components/circuitCanvas/contextMenuPopup.tsx`) werden ebenfalls in eine eigene Datei mit Default-Export ausgelagert, statt mehrere Komponenten aus einer Datei zu exportieren.
+  - Spezialfall Symbol-Renderer (`src/components/symbols/`): Der zentrale Dispatcher liegt als `symbolRenderer.tsx` im Verzeichnis, während die einzelnen Bauteil-Vektorglyphen thematisch in Unterverzeichnissen (`display/`, `gate/`, `io/`) liegen.
   - Komponenten-Bezeichner im Code sind `PascalCase` (z. B. `CircuitCanvas`, `CanvasGrid`).
   - Einstiegspunkte wie `index.tsx` exportieren die Komponente direkt als Default-Export (kein Barrel-File).
 - **Default-Export für Komponenten:**
@@ -61,21 +63,21 @@ Zur Verwaltung von Schaltungsdaten, Editor-Werkzeugen und Simulations-Zuständen
 - **Verwendung für Logik, Solver & Simulations-Engine:**
   Die digitale Logiksimulation (Signal-Propagation, Gatter-Evaluation, Takt-Oszillatoren, Bus-Splitter, RAM/ROM-Zellen) und Dateiformat-Parser werden als modulare TypeScript-Klassen realisiert.
 - **Default-Export für primäre Klassen:**
-  Dateien, die eine primäre Klasse exportieren, stellen diese als Default-Export bereit.
+  Dateien, die eine primäre Klasse exportieren, stellen diese als Default-Export bereit. Domänenspezifische Fehler- und Daten-Hilfsklassen (z. B. `NoBrowserSessionError`, `StateIndex`, `Result`, `Parameter`) dürfen neben der primären Klasse oder im jeweiligen Server-/Compiler-Modul als benannte Exporte stehen.
 - **Native Private Felder (`#field`):**
   Für interne Klassenvariablen und -methoden sind bevorzugt native ECMAScript Private Fields (`#field` bzw. `readonly #roField`) statt des reinen TypeScript-Keywords `private` zu verwenden.
-- **Ausnahme: Hilfsmodule (`common.ts` / `utils.ts`):**
-  Dateien, die eine Sammlung eigenständiger mathematischer Helfer (Vektorberechnung, Wire-Routing, Box-Collision) oder Bit-Operationen bereitstellen, exportieren diese als benannte Exporte (`export const ...`, `export function ...`). In solchen Sammlungen wird kein Default-Export verwendet.
+- **Ausnahme: Hilfsmodule (`src/utils/**`):**
+  Dateien, die eine Sammlung eigenständiger mathematischer Helfer (Vektorberechnung, Wire-Routing, Box-Collision), Storage- oder XML-/Format-Operationen bereitstellen, exportieren diese ausschließlich als benannte Exporte (`export const ...`, `export function ...`) ohne Default-Export. Für `src/utils/**/*.ts` ist in `eslint.config.js` hierfür ein gezielter Override (`import-x/prefer-default-export: "off"`) konfiguriert.
 
 ---
 
-## React Hooks & Formatierung (`useMemo`, `useCallback`, `useEffect`)
+## React Hooks & Formatierung (`useMemo`, `useCallback`, `useEffect`, `useLayoutEffect`)
 
-Um das Ein- und Ausklappen der Funktionsrümpfe in Code-Editoren zu unterstützen und die Dependency-Liste dauerhaft sichtbar zu halten, folgen alle React-Hooks einer strikten Formatierung.
+Um das Ein- und Ausklappen der Funktionsrümpfe in Code-Editoren zu unterstützen und die Dependency-Liste dauerhaft sichtbar zu halten, folgen alle React-Hooks einer strikten Formatierung, die über die lokalen ESLint-Regeln `local/react-default-import-only` und `local/hook-formatting` automatisch durchgesetzt wird.
 
 ### React-Namespace (`React.xyz`)
 - React wird ausnahmslos als Default-Import importiert: `import React from "react";`.
-- Alle React-Funktionen, Hooks und Typen müssen über den Namespace `React.` aufgerufen werden (z. B. `React.useState`, `React.useMemo`, `React.useCallback`, `React.useEffect`, `React.useRef`, `React.useContext`, `React.FC`).
+- Alle React-Funktionen, Hooks und Typen müssen über den Namespace `React.` aufgerufen werden (z. B. `React.useState`, `React.useMemo`, `React.useCallback`, `React.useEffect`, `React.useLayoutEffect`, `React.useRef`, `React.useContext`, `React.FC`).
 - Benannte Imports aus `"react"` (wie `import { useState } from "react";`) sind nicht zulässig.
 
 ### Strukturregeln für Hooks
@@ -92,9 +94,9 @@ Um das Ein- und Ausklappen der Funktionsrümpfe in Code-Editoren zu unterstütze
 - **CSS-in-JS via Emotion:**
   Das Styling von UI-Komponenten erfolgt über `@emotion/styled`.
 - **CSS-Variablen für Farben & Themes:**
-  Farben, Schaltungsstati und Dimensionen werden als semantische CSS-Variablen in `:root` (in `index.html`) definiert und in Emotion über `var(--color-...)` verwendet.
+  Farben, Schaltungsstati und Dimensionen werden als semantische CSS-Variablen in `:root` (in `index.html`) definiert und in Emotion über `var(--color-...)` verwendet. Ausgenommen sind SVG-Hardware-Farbpaletten unter `src/components/symbols/` (z. B. LED- und Display-Farben), Schatten-/Drop-Shadow-Effekte sowie abgedunkelte Modal-Backdrops (`rgba(0, 0, 0, ...)`).
 - **`rem`-Einheiten für Skalierbarkeit:**
-  Für Abstände, Border-Radii und UI-Dimensionen sind konsequent `rem`-Einheiten statt fester `px`-Werte einzusetzen (Canvas-Koordinaten für Schaltungsgitter können als relative Einheiten berechnet werden).
+  Für Abstände, Border-Radii und UI-Dimensionen sind konsequent `rem`-Einheiten statt fester `px`-Werte einzusetzen. Ausgenommen sind `1px`-Haarlinien/Borders, `box-shadow`/`drop-shadow`/`blur`-Effekte sowie SVG-Koordinaten, SVG-Schriftgrößen und berechnete Canvas-Gitterkoordinaten.
 - **Zentrale Kind-Element-Selektoren statt Micro-Components:**
   Sub-Elemente werden innerhalb des Root-Styles über verschachtelte Selektoren mit Kind-Kombinatoren (`& > ...`) definiert.
 
@@ -102,7 +104,7 @@ Um das Ein- und Ausklappen der Funktionsrümpfe in Code-Editoren zu unterstütze
 
 ## Imports & Import-Organisation
 
-Imports werden in logischen Gruppen organisiert, die durch Leerzeilen getrennt sind. Innerhalb jeder Gruppe werden die Import-Statements alphabetisch sortiert:
+Imports werden in logischen Gruppen organisiert, die durch Leerzeilen getrennt sind. Innerhalb jeder Gruppe werden die Import-Statements alphabetisch sortiert (automatisch durchgesetzt über `import-x/order` in `eslint.config.js`, inklusive Testdateien):
 
 - **Standard- & Core-Bibliotheken** (z. B. `react`, `react-dom`)
 - **Externe Bibliotheken & Frameworks** (z. B. `@emotion/styled`)
@@ -132,9 +134,27 @@ Imports werden in logischen Gruppen organisiert, die durch Leerzeilen getrennt s
 
 ---
 
-## Typdefinitionen ("type over interface")
+## Typdefinitionen ("type over interface" & Ein Typ pro Datei)
 
-Für alle Datenstrukturen (Komponenten-Props, Schaltungsmodelle, Gatter-Definitionen, Wire-Knoten und Utility-Typen) sind TypeScript-`type`-Aliase statt `interface`-Deklarationen zu verwenden.
+- **`type` statt `interface`:**
+  Für alle Datenstrukturen (Komponenten-Props, Schaltungsmodelle, Gatter-Definitionen, Wire-Knoten und Utility-Typen) sind TypeScript-`type`-Aliase statt `interface`-Deklarationen zu verwenden.
+- **Kein explizites `any` im Produktionscode:**
+  `tseslint/no-explicit-any` ist für Produktionscode aktiv (nur Testdateien unter `src/test/**` und `server/test/**` sind ausgenommen).
+- **Ein Typ pro Datei mit Default-Export (`src/types/`):**
+  Jede zentrale Typdefinition erhält eine eigene Datei in `camelCase` unter `src/types/` (z. B. `src/types/example.ts`) und wird dort als Default-Export bereitgestellt. Logisch zusammengehörige Typen dürfen in thematischen Unterverzeichnissen unter `src/types/<unterverzeichnis>/` gruppiert werden:
+  ```ts
+  import Baz from "./baz";
+
+  type Example = {
+    foo: string;
+    bar?: number;
+    baz: Baz;
+  };
+
+  export default Example;
+  ```
+- **Pragmatische Ausnahmen für eng gekoppelte Typen:**
+  Lokale Komponenten-`*Props` (und eng zugehörige Hilfstypen wie `ContextMenuItem`), eng gekoppelte Dokument-/Protokoll-Schemas (z. B. `nativeProjectFormat.ts`, `workerMessages.ts`) sowie direkt zum Typ gehörende Konstanten (z. B. `state.ts`) dürfen gruppiert als benannte Exporte geführt werden.
 
 ---
 
@@ -146,9 +166,13 @@ Nach Änderungen am Code müssen alle Validierungsschritte mit Exit Code 0 durch
   ```bash
   yarn errorcheck
   ```
-- **ESLint Linter & Docs-Linter:**
+- **ESLint Linter:**
   ```bash
   yarn lint
+  ```
+- **Docs-Linter:**
+  ```bash
+  yarn lint-docs
   ```
 - **Vitest Run:**
   ```bash

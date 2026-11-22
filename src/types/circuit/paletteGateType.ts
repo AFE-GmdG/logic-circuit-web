@@ -1,0 +1,30 @@
+// Bauteil- und Gatter-Kürzel für SymbolRenderer und Komponenten-Palette
+type PaletteGateType =
+  | "not"
+  | "and"
+  | "or"
+  | "xor"
+  | "nand"
+  | "nor"
+  | "xnor"
+  | "triState1"
+  | "triState2"
+  | "clock"
+  | "led"
+  | "button"
+  | "constant"
+  | "probe"
+  | "pin"
+  | "pinIn"
+  | "pinOut"
+  | "sevenSegment"
+  | "ledMatrix"
+  | "sensor"
+  | "sound"
+  | "synthesizer"
+  | "splitter"
+  | "rom"
+  | "ram"
+  | "graphicsArray";
+
+export default PaletteGateType;

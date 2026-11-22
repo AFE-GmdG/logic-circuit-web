@@ -1,0 +1,25 @@
+# Beispiel-Konfiguration für Caddy mit statischem Web-Container und Remote-MCP-Sidecar.
+# Die statischen Assets werden von logiccircuit-web (Port 8080) ausgeliefert;
+# /ws-mcp und /__mcp/* werden an den MCP-Sidecar (logiccircuit-mcp:3001) geleitet.
+
+circuit.example.com {
+	@mcp path /ws-mcp /__mcp/*
+
+	# GDPR: Optional Access-Logs für MCP-Pfade überspringen (ab Caddy 2.7+),
+	# sofern für diese Site ein log-Block aktiv ist:
+	# log_skip @mcp
+
+	handle @mcp {
+		reverse_proxy logiccircuit-mcp:3001 {
+			# Ausreichende Timeouts für längere Simulationen und ruhige WebSockets
+			transport http {
+				read_timeout 10m
+				write_timeout 10m
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy logiccircuit-web:8080
+	}
+}

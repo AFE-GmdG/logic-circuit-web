@@ -8,8 +8,11 @@ In diesem Verzeichnis werden Fehlerberichte und Incident-Analysen nach folgendem
 
 ## Erfasste Bugs
 
+> 📚 Alle in Version 1.0 behobenen Fehlerberichte (`B-001`, `B-003`, `B-004`) sind in der Chronik **[Was bisher geschah – Release 1.0](../history-1.0.md)** dokumentiert.
+
 | Bug | Titel | Schweregrad | Status |
 | :--- | :--- | :--- | :--- |
+| **[B-002](B-002-copy-web-paste-desktop-ignoriert.md)** | Copy (Web) → Paste (Desktop) wird in Desktop-App ignoriert | Mittel | 📋 Offen |
 
 ## Vorlage für Bug-Reports
 

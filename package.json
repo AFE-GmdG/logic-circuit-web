@@ -1,20 +1,42 @@
 {
-  "name": "logiccircuit",
-  "description": "Logic Circuit - Digital Circuit Simulator & CAD for the Web",
+  "name": "logic-circuit-web",
+  "description": "Logic Circuit Web - Interactive Digital Logic Circuit CAD and WebWorker Simulator in the Browser",
   "version": "1.0.0",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "author": {
     "name": "Andreas Friedel"
   },
+  "homepage": "https://afe-gmdg.github.io/logic-circuit-web/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AFE-GmdG/logic-circuit-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AFE-GmdG/logic-circuit-web/issues"
+  },
+  "keywords": [
+    "logic-circuit",
+    "digital-logic",
+    "circuit-simulator",
+    "schematics-editor",
+    "electronics",
+    "react",
+    "typescript",
+    "webworker",
+    "mcp"
+  ],
   "scripts": {
     "predev": "rimraf dist",
     "dev": "vite",
     "prebuild": "rimraf dist",
     "build": "vite build",
+    "build:pages": "rimraf dist && vite build --mode pages",
     "preview": "vite preview",
-    "errorcheck": "tsc --noEmit",
-    "lint": "eslint && node scripts/lint-docs.mjs",
+    "errorcheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "lint": "eslint",
+    "lint-docs": "node scripts/lint-docs.mjs",
     "test": "vitest run",
     "clean": "rimraf dist",
     "rr": "rimraf dist node_modules yarn.lock"
@@ -23,8 +45,10 @@
     "@emotion/cache": "11.14.0",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
+    "i18next": "27.2.2",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-i18next": "18.0.3"
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "5.10.0",
@@ -42,4 +66,3 @@
     "vitest": "5.0.5"
   }
 }
-

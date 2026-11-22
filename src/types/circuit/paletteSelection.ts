@@ -1,0 +1,58 @@
+import type DisplayColor from "./displayColor";
+import type LedMatrixCellShape from "./ledMatrixCellShape";
+import type LedMatrixType from "./ledMatrixType";
+import type MemoryOnStart from "./memoryOnStart";
+import type PaletteGateType from "./paletteGateType";
+import type PinSide from "./pinSide";
+import type ProbeFormat from "./probeFormat";
+import type Rotation from "./rotation";
+import type SensorType from "./sensorType";
+import type SoundWaveform from "./soundWaveform";
+import type SynthesizerMode from "./synthesizerMode";
+
+// Auswahl-Payload beim Klicken auf ein Element in der Komponenten-Palette
+type PaletteSelection = {
+  type: PaletteGateType | "subCircuit" | "textNote";
+  inputCount?: number;
+  subCircuitId?: string;
+  name: string;
+  notation?: string;
+  jamNotation?: string;
+  note?: string;
+  rotation?: Rotation;
+  width?: number;
+  height?: number;
+  isToggle?: boolean;
+  inverted?: boolean;
+  keyCode?: number;
+  modifiers?: number;
+  bitWidth?: number;
+  pinSide?: PinSide;
+  isHex?: boolean;
+  displayFormat?: ProbeFormat;
+  value?: number;
+  rows?: number;
+  columns?: number;
+  matrixType?: LedMatrixType;
+  cellShape?: LedMatrixCellShape;
+  color?: DisplayColor;
+  colors?: number;
+  persistenceMultiplier?: 1 | 2 | 3;
+  pinCount?: number;
+  pinBitWidth?: number;
+  clockwise?: boolean;
+  sensorType?: SensorType;
+  addressBitWidth?: number;
+  dataBitWidth?: number;
+  bitsPerPixel?: number;
+  zoom?: number;
+  writeOn1?: boolean;
+  onStart?: MemoryOnStart;
+  dualPort?: boolean;
+  data?: string;
+  frequency?: number;
+  waveform?: SoundWaveform;
+  synthesizerMode?: SynthesizerMode;
+};
+
+export default PaletteSelection;

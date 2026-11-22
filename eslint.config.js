@@ -1,15 +1,18 @@
-import tseslint from "@typescript-eslint/eslint-plugin";
-import tsParser from "@typescript-eslint/parser";
-import stylistic from "@stylistic/eslint-plugin";
-import importX from "eslint-plugin-import-x";
-
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import stylistic from "@stylistic/eslint-plugin";
+import tseslint from "@typescript-eslint/eslint-plugin";
+import tsParser from "@typescript-eslint/parser";
+import importX from "eslint-plugin-import-x";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Lokales Plugin für projektspezifische Code-Richtlinien
-const noNumberedCommentPlugin = {
+const HOOK_NAMES = new Set(["useMemo", "useCallback", "useEffect", "useLayoutEffect"]);
+const REL_PREFIX = "{.,..,../..,../../..,../../../..,../src,../../src}";
+
+const localCodingRulesPlugin = {
   rules: {
     "no-numbered-comments": {
       meta: {
@@ -43,6 +46,147 @@ const noNumberedCommentPlugin = {
         };
       },
     },
+    "react-default-import-only": {
+      meta: {
+        type: "problem",
+        docs: {
+          description: "Erzwingt den Default-Import von react ohne benannte oder Namespace-Imports",
+        },
+        messages: {
+          reactDefaultOnly: "Nur 'import React from \"react\";' ist zulässig; benannte oder Namespace-Imports aus 'react' sind verboten.",
+        },
+      },
+      create(context) {
+        return {
+          ImportDeclaration(node) {
+            if (node.source.value !== "react") {
+              return;
+            }
+            for (const spec of node.specifiers) {
+              if (spec.type !== "ImportDefaultSpecifier") {
+                context.report({
+                  node: spec,
+                  messageId: "reactDefaultOnly",
+                });
+              }
+            }
+          },
+        };
+      },
+    },
+    "hook-formatting": {
+      meta: {
+        type: "layout",
+        docs: {
+          description: "Prüft React.-Präfix, Zeilenumbrüche und Dependency-Array-Formatierung für React Hooks",
+        },
+        messages: {
+          requireReactPrefix: "Hook '{{name}}' muss über den Namespace 'React.{{name}}' aufgerufen werden.",
+          callbackNewLine: "Die Callback-Funktion von 'React.{{name}}' muss auf einer eigenen eingerückten Zeile beginnen.",
+          depsNewLine: "Das Dependency-Array von 'React.{{name}}' muss unter der schließenden Klammer '},' beginnen.",
+          depsSingleLine: "Dependency-Arrays mit weniger als 3 Abhängigkeiten müssen einzeilig geschrieben werden.",
+          depsMultiLine: "Dependency-Arrays mit 3 oder mehr Abhängigkeiten müssen mehrzeilig mit genau einem Eintrag pro Zeile geschrieben werden.",
+          depsTrailingComma: "Nach dem Dependency-Array von 'React.{{name}}' fehlt das abschließende Komma.",
+        },
+      },
+      create(context) {
+        return {
+          CallExpression(node) {
+            let hookName = null;
+            let hasReactPrefix = false;
+
+            if (node.callee.type === "Identifier" && HOOK_NAMES.has(node.callee.name)) {
+              hookName = node.callee.name;
+            } else if (
+              node.callee.type === "MemberExpression" &&
+              !node.callee.computed &&
+              node.callee.object.type === "Identifier" &&
+              node.callee.object.name === "React" &&
+              node.callee.property.type === "Identifier" &&
+              HOOK_NAMES.has(node.callee.property.name)
+            ) {
+              hookName = node.callee.property.name;
+              hasReactPrefix = true;
+            }
+
+            if (!hookName) {
+              return;
+            }
+
+            if (!hasReactPrefix) {
+              context.report({
+                node: node.callee,
+                messageId: "requireReactPrefix",
+                data: { name: hookName },
+              });
+            }
+
+            const cb = node.arguments[0];
+            if (!cb) {
+              return;
+            }
+
+            if (cb.loc.start.line === node.loc.start.line) {
+              context.report({
+                node: cb,
+                messageId: "callbackNewLine",
+                data: { name: hookName },
+              });
+            }
+
+            const deps = node.arguments[1];
+            if (!deps || deps.type !== "ArrayExpression") {
+              return;
+            }
+
+            if (deps.loc.start.line === cb.loc.end.line) {
+              context.report({
+                node: deps,
+                messageId: "depsNewLine",
+                data: { name: hookName },
+              });
+            }
+
+            if (deps.elements.length < 3) {
+              if (deps.loc.start.line !== deps.loc.end.line) {
+                context.report({
+                  node: deps,
+                  messageId: "depsSingleLine",
+                });
+              }
+            } else {
+              const seenLines = new Set();
+              let hasLineViolation = deps.loc.start.line === deps.loc.end.line;
+              for (const el of deps.elements) {
+                if (!el) {
+                  continue;
+                }
+                if (el.loc.start.line === deps.loc.start.line || seenLines.has(el.loc.start.line)) {
+                  hasLineViolation = true;
+                  break;
+                }
+                seenLines.add(el.loc.start.line);
+              }
+              if (hasLineViolation) {
+                context.report({
+                  node: deps,
+                  messageId: "depsMultiLine",
+                });
+              }
+            }
+
+            const nextToken = context.sourceCode.getTokenAfter(deps);
+            if (!nextToken || nextToken.value !== ",") {
+              context.report({
+                node: deps,
+                messageId: "depsTrailingComma",
+                data: { name: hookName },
+              });
+            }
+          },
+        };
+      },
+    },
   },
 };
 
@@ -71,7 +215,7 @@ export default [
       tseslint,
       "@stylistic": stylistic,
       "import-x": importX,
-      local: noNumberedCommentPlugin,
+      local: localCodingRulesPlugin,
     },
 
     rules: {
@@ -133,6 +277,7 @@ export default [
       "naming-convention": "off",
       "tseslint/naming-convention": "off",
       "tseslint/consistent-type-definitions": ["error", "type"],
+      "tseslint/no-explicit-any": "error",
 
       "@stylistic/indent": ["error", 2, {
         SwitchCase: 1,
@@ -178,8 +323,44 @@ export default [
       "@/func-call-spacing": ["error", "never"],
 
       "import-x/prefer-default-export": ["error", { target: "single" }],
+      "import-x/order": ["error", {
+        groups: [
+          "builtin",
+          "external",
+          "internal",
+          ["parent", "sibling"],
+          "index",
+        ],
+        pathGroups: [
+          { pattern: "{react,react-dom,react-dom/**}", group: "builtin", position: "before" },
+          { pattern: `{.,${REL_PREFIX}/{contexts,hooks}{,/**}}`, group: "internal", position: "before" },
+          { pattern: `{${REL_PREFIX}/types/**,./gateShapeProps,./ioProps}`, group: "internal", position: "before" },
+          { pattern: `${REL_PREFIX}/{audio,i18n,mcp,server,simulation,utils}{,/**}`, group: "internal", position: "after" },
+          { pattern: `${REL_PREFIX}/components/**`, group: "parent", position: "after" },
+          { pattern: `${REL_PREFIX}/**/*.{json,svg,png,css}`, group: "index", position: "after" },
+        ],
+        pathGroupsExcludedImportTypes: ["builtin"],
+        distinctGroup: true,
+        "newlines-between": "always",
+        alphabetize: { order: "asc", caseInsensitive: true },
+        warnOnUnassignedImports: false,
+      }],
 
       "local/no-numbered-comments": "error",
+      "local/react-default-import-only": "error",
+      "local/hook-formatting": "error",
+    },
+  },
+  {
+    files: ["src/utils/**/*.ts"],
+    rules: {
+      "import-x/prefer-default-export": "off",
+    },
+  },
+  {
+    files: ["src/test/**/*.ts", "src/test/**/*.tsx", "server/test/**/*.ts"],
+    rules: {
+      "tseslint/no-explicit-any": "off",
     },
   },
 ];

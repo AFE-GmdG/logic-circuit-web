@@ -23,7 +23,10 @@ Logic Circuit Web folgt einer strikt User-Story- und Task-getriebenen Dokumentat
 ```text
 docs/
 ├── coding-rules.md               # Verbindliche Entwicklungs- und Formatierungsrichtlinien
+├── data-model.md                 # Tiefgehende Spezifikation des Referenz-Datenmodells (C#-Vorlage -> TS)
+├── history-1.0.md                # Chronik „Was bisher geschah“ (alle Stories, Tasks & Fixes bis Release 1.0)
 ├── intro.md                      # Dieses Dokument (Vision, Systemkonzept, Roadmap)
+├── mcp.md                        # Spezifikation & Architektur der Model Context Protocol (MCP) Integration
 ├── scrum-board.md                # Kanban-Board
 ├── user_stories/                 # Fachliche Anforderungen und Akzeptanzkriterien (US-xxx)
 │   └── README.md
@@ -58,4 +61,3 @@ Die Steuerung des Entwicklungsfortschritts erfolgt über das zentrale Kanban-Boa
 
 ### Abschluss von User Stories
 Eine User Story wechselt erst dann in den Status **Abgeschlossen**, wenn alle ihr zugeordneten Tasks auf `Done` stehen und der Nutzer explizit bestätigt, dass die Akzeptanzkriterien vollständig erfüllt sind.
-

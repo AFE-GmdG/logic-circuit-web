@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import createCache from "@emotion/cache";
 import { CacheProvider } from "@emotion/react";
 
+import "./i18n";
+
 import App from "./components/app";
 
 // Emotion-Cache ohne Stylis-Plugins erstellen (deaktiviert alle Vendor-Prefixes)

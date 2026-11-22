@@ -1,0 +1,1765 @@
+[
+  {
+    "name": "get_component_catalog",
+    "title": "Component Catalog",
+    "description": "Returns all available standard components (even for an empty project) including category, default dimensions, resize bounds, pin layout, dynamic pin-position hints, supported configuration properties, and optionally the sub-circuits of the current project. Using 'type' and 'preview', concrete computed dimensions and pin coordinates for arbitrary parameters can also be queried beforehand.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "io",
+            "displays",
+            "gates",
+            "decoration",
+            "circuits"
+          ],
+          "description": "Optional filter for a palette category ID."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "not",
+            "and",
+            "or",
+            "xor",
+            "nand",
+            "nor",
+            "xnor",
+            "triState1",
+            "triState2",
+            "clock",
+            "led",
+            "button",
+            "constant",
+            "probe",
+            "pin",
+            "pinIn",
+            "pinOut",
+            "sevenSegment",
+            "ledMatrix",
+            "sound",
+            "synthesizer",
+            "graphicsArray",
+            "sensor",
+            "splitter",
+            "rom",
+            "ram",
+            "subCircuit",
+            "textNote"
+          ],
+          "description": "Optional filter for a single component type (required when 'preview' is provided)."
+        },
+        "includeAliases": {
+          "type": "boolean",
+          "description": "Whether legacy aliases such as 'pin' should be included in the catalog (default false)."
+        },
+        "includeSubCircuits": {
+          "type": "boolean",
+          "description": "Whether sub-circuits in the currently open project should be included along with outer pins and dimensions (default true)."
+        },
+        "preview": {
+          "type": "object",
+          "description": "Optional parameter preview (only allowed together with 'type') to compute concrete dimensions and pin positions before placement.",
+          "properties": {
+            "inputCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 18
+            },
+            "subCircuitId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "notation": {
+              "type": "string"
+            },
+            "isToggle": {
+              "type": "boolean"
+            },
+            "bitWidth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "pinSide": {
+              "type": "string",
+              "enum": [
+                "left",
+                "top",
+                "right",
+                "bottom"
+              ]
+            },
+            "isHex": {
+              "type": "boolean"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "matrixType": {
+              "type": "string",
+              "enum": [
+                "individual",
+                "selector"
+              ]
+            },
+            "cellShape": {
+              "type": "string",
+              "enum": [
+                "round",
+                "rect"
+              ]
+            },
+            "color": {
+              "type": "string",
+              "enum": [
+                "red",
+                "yellow",
+                "green",
+                "blue"
+              ]
+            },
+            "pinCount": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 32
+            },
+            "pinBitWidth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "clockwise": {
+              "type": "boolean"
+            },
+            "sensorType": {
+              "type": "string",
+              "enum": [
+                "random",
+                "manual",
+                "series",
+                "loop",
+                "ascii",
+                "keyCode",
+                "sequence",
+                "clock"
+              ]
+            },
+            "frequency": {
+              "type": "number",
+              "minimum": 20,
+              "maximum": 20000
+            },
+            "waveform": {
+              "type": "string",
+              "enum": [
+                "sine",
+                "triangle",
+                "square",
+                "sawtooth"
+              ]
+            },
+            "synthesizerMode": {
+              "type": "string",
+              "enum": [
+                "sine",
+                "triangle",
+                "square",
+                "sawtooth",
+                "noise"
+              ]
+            },
+            "addressBitWidth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "dataBitWidth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "bitsPerPixel": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                4,
+                8
+              ]
+            },
+            "zoom": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            },
+            "writeOn1": {
+              "type": "boolean"
+            },
+            "onStart": {
+              "type": "string",
+              "enum": [
+                "random",
+                "zeros",
+                "ones",
+                "data"
+              ]
+            },
+            "dualPort": {
+              "type": "boolean"
+            },
+            "data": {
+              "type": "string"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 640
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 480
+            },
+            "inverted": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "get_circuit_summary",
+    "title": "Circuit Summary",
+    "description": "Returns an overview of the LogicCircuit project open in the browser: project name, active circuit, all circuits (LogicalCircuits) with counts of symbols, wires, text notes, and pins, as well as the current editor selection.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "get_circuit_details",
+    "title": "Circuit Details",
+    "description": "Returns the detailed contents of a circuit: placed symbols (type, grid position, rotation, size, connection points/jams with absolute grid coordinates), wire segments, text notes, and the current selection. Coordinates are grid units (1 unit = 18 px).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuitId": {
+          "type": "string",
+          "description": "ID of the circuit (logicalCircuitId). Defaults to the circuit currently open in the editor."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "get_circuit_image",
+    "title": "Circuit Screenshot",
+    "description": "Generates a screenshot of the schematic as a PNG image (Base64). Supports the full circuit ('circuit') and current viewport ('viewport'), as well as cropped captures via grid rectangle ('gridRect') or component list ('symbolIds') including configurable margin ('margin') and filter for unrelated components ('unrelatedSymbols').",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "viewport",
+            "circuit"
+          ],
+          "description": "Capture mode without explicit bounds: 'viewport' (current viewport, default) or 'circuit' (entire circuit). Cannot be combined with 'gridRect' or 'symbolIds'."
+        },
+        "gridRect": {
+          "type": "object",
+          "description": "Explicit grid bounding box { x, y, width, height } in 18px grid units for a cropped screenshot.",
+          "properties": {
+            "x": {
+              "type": "number",
+              "description": "Left grid X coordinate of the capture region."
+            },
+            "y": {
+              "type": "number",
+              "description": "Top grid Y coordinate of the capture region."
+            },
+            "width": {
+              "type": "number",
+              "minimum": 1,
+              "description": "Width of the capture region in grid units (minimum 1)."
+            },
+            "height": {
+              "type": "number",
+              "minimum": 1,
+              "description": "Height of the capture region in grid units (minimum 1)."
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "symbolIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "List of component IDs (circuitSymbolId) around which the screenshot is automatically cropped with margin ('margin', default 2)."
+        },
+        "margin": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 50,
+          "description": "Surrounding margin in grid units (default: 2 for 'symbolIds' and 'circuit', 0 for 'gridRect'; not allowed with 'viewport')."
+        },
+        "unrelatedSymbols": {
+          "type": "string",
+          "enum": [
+            "show",
+            "dim",
+            "hide"
+          ],
+          "description": "How to render symbols inside the capture region not listed in 'symbolIds': 'show' (default, normally visible), 'dim' (dimmed with reduced opacity), or 'hide' (hidden in screenshot). Only allowed together with 'symbolIds'."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "move_elements",
+    "title": "Move Elements",
+    "description": "Moves symbols, text notes, and/or wires together by the grid delta (dx, dy) in a single undo step. Optionally rubberbands connected wires not explicitly listed along with moved symbol jams.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "symbolIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the symbols to move (circuitSymbolId)."
+        },
+        "textNoteIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the text notes to move (textNoteId)."
+        },
+        "wireIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the wires to move completely (wireId)."
+        },
+        "dx": {
+          "type": "integer",
+          "description": "Horizontal grid offset (positive right, negative left)."
+        },
+        "dy": {
+          "type": "integer",
+          "description": "Vertical grid offset (positive down, negative up)."
+        },
+        "withWires": {
+          "type": "boolean",
+          "description": "Whether connected wires not listed in wireIds should follow moved symbol jams (default true)."
+        }
+      },
+      "required": [
+        "dx",
+        "dy"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "rotate_symbols",
+    "title": "Rotate Elements",
+    "description": "Rotates symbols, text notes, and optionally wires in the active circuit by 90 degrees around their shared centroid clockwise or counter-clockwise (including rubberbanding connected external wires).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "symbolIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the symbols to rotate (circuitSymbolId)."
+        },
+        "textNoteIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional IDs of text notes to rotate along with the symbols."
+        },
+        "wireIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional IDs of wires (wireId) to rotate completely including bend and junction points around the same group centroid."
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "clockwise",
+            "counterClockwise"
+          ],
+          "description": "Rotation direction (default 'clockwise')."
+        },
+        "withWires": {
+          "type": "boolean",
+          "description": "Whether connected wire endpoints not in wireIds should follow the new pin positions (default true)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "delete_elements",
+    "title": "Delete Elements",
+    "description": "Removes symbols, wires, and/or text notes by ID from the active circuit, updates the ConductorMap, and records a reversible undo delta.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "symbolIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the symbols to delete (circuitSymbolId)."
+        },
+        "wireIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the wires to delete (wireId)."
+        },
+        "textNoteIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the text notes to delete (textNoteId)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "connect_wire",
+    "title": "Connect Wire",
+    "description": "Routes a wire in the active circuit between two grid coordinates or component pins (jams), updates the ConductorMap as well as bit-width/short-circuit validation, and updates undo history.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "object",
+          "description": "Start endpoint: either { x, y } or { symbolId, pinName?, jamIndex? }.",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "description": "Grid X coordinate."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Grid Y coordinate."
+            },
+            "symbolId": {
+              "type": "string",
+              "description": "ID of the start symbol (circuitSymbolId)."
+            },
+            "pinName": {
+              "type": "string",
+              "description": "Name or pinId of the terminal (e.g. 'Out', 'In 1'). Optional for single-pin symbols."
+            },
+            "jamIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "0-based index of the terminal in symbol.jams."
+            }
+          },
+          "additionalProperties": false
+        },
+        "to": {
+          "type": "object",
+          "description": "Target endpoint: either { x, y } or { symbolId, pinName?, jamIndex? }.",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "description": "Grid X coordinate."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Grid Y coordinate."
+            },
+            "symbolId": {
+              "type": "string",
+              "description": "ID of the target symbol (circuitSymbolId)."
+            },
+            "pinName": {
+              "type": "string",
+              "description": "Name or pinId of the terminal (e.g. 'In 1', 'In'). Optional for single-pin symbols."
+            },
+            "jamIndex": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "0-based index of the terminal in symbol.jams."
+            }
+          },
+          "additionalProperties": false
+        },
+        "route": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "horizontal-first",
+            "vertical-first"
+          ],
+          "description": "Wire routing when X and Y coordinates differ: 'direct' (one segment, default), 'horizontal-first', or 'vertical-first' (two orthogonal segments)."
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "add_elements",
+    "title": "Add Elements Batch",
+    "description": "Places multiple components, text notes, and wires atomically in a single call and a single undo/redo step. Newly placed components can be referenced as wire endpoints inside the same 'wires' array using an optional temporary 'ref'.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "components": {
+          "type": "array",
+          "description": "List of components and/or text notes to place.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Optional unique short reference within this call (e.g. 'btnA', 'xor1') that 'wires' can reference via { ref, pinName?, jamIndex? }."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "not",
+                  "and",
+                  "or",
+                  "xor",
+                  "nand",
+                  "nor",
+                  "xnor",
+                  "triState1",
+                  "triState2",
+                  "clock",
+                  "led",
+                  "button",
+                  "constant",
+                  "probe",
+                  "pin",
+                  "pinIn",
+                  "pinOut",
+                  "sevenSegment",
+                  "ledMatrix",
+                  "sound",
+                  "synthesizer",
+                  "graphicsArray",
+                  "sensor",
+                  "splitter",
+                  "rom",
+                  "ram",
+                  "subCircuit",
+                  "textNote"
+                ],
+                "description": "Palette component type to place, or 'subCircuit' or 'textNote'."
+              },
+              "x": {
+                "type": "integer",
+                "description": "Target X coordinate on the circuit grid (top-left corner)."
+              },
+              "y": {
+                "type": "integer",
+                "description": "Target Y coordinate on the circuit grid (top-left corner)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional display name of the component."
+              },
+              "notation": {
+                "type": "string",
+                "description": "Optional label/notation (for button, pin, probe, or sensor)."
+              },
+              "jamNotation": {
+                "type": "string",
+                "description": "Short pin label on the outer sub-circuit symbol (only for pin components)."
+              },
+              "note": {
+                "type": "string",
+                "description": "Text content for type='textNote', or optional component note for all other types."
+              },
+              "rotation": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "right",
+                  "down",
+                  "left"
+                ],
+                "description": "Initial grid orientation ('up'=0°, 'right'=90°, 'down'=180°, 'left'=-90°)."
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 640,
+                "description": "Grid width for resizable components (button, constant, probe, pin*: 2..20; textNote: 1..100), or pixel width (1..640) for type='graphicsArray'."
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 480,
+                "description": "Grid height for resizable components (button, constant, probe, pin*: 2..20; textNote: 1..100), or pixel height (1..480) for type='graphicsArray'."
+              },
+              "inputCount": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 18,
+                "description": "Number of inputs for multi-input gates (default 2)."
+              },
+              "subCircuitId": {
+                "type": "string",
+                "description": "ID of the LogicalCircuit to embed when type='subCircuit'."
+              },
+              "isToggle": {
+                "type": "boolean",
+                "description": "For type='button': true for latching toggle switch, false for momentary push button."
+              },
+              "inverted": {
+                "type": "boolean",
+                "description": "Inverts the terminal on type='button', 'pin', 'pinIn', or 'pinOut'."
+              },
+              "keyCode": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Optional WPF key code for keyboard triggers on type='button'."
+              },
+              "modifiers": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Optional modifier bitmask for keyboard triggers on type='button'."
+              },
+              "bitWidth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32,
+                "description": "Bit width for constant, pin, pinIn, pinOut, sensor, or splitter."
+              },
+              "pinSide": {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "top",
+                  "right",
+                  "bottom"
+                ],
+                "description": "Pin edge side for button, constant, probe, pin, pinIn, pinOut, or sensor."
+              },
+              "isHex": {
+                "type": "boolean",
+                "description": "Hexadecimal display for constant or probe."
+              },
+              "displayFormat": {
+                "type": "string",
+                "enum": [
+                  "hex",
+                  "dec",
+                  "bin"
+                ],
+                "description": "Display format for type='probe' ('hex', 'dec', or 'bin')."
+              },
+              "value": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Initial output value for type='constant' (default 1)."
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "Number of rows for type='ledMatrix'."
+              },
+              "columns": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "Number of columns for type='ledMatrix'."
+              },
+              "matrixType": {
+                "type": "string",
+                "enum": [
+                  "individual",
+                  "selector"
+                ],
+                "description": "Drive mode for type='ledMatrix'."
+              },
+              "cellShape": {
+                "type": "string",
+                "enum": [
+                  "round",
+                  "rect"
+                ],
+                "description": "Cell shape for type='ledMatrix'."
+              },
+              "colors": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "description": "Bits per LED (color depth 1..3) for type='ledMatrix'."
+              },
+              "persistenceMultiplier": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "description": "Persistence multiplier (1..3) for type='ledMatrix'."
+              },
+              "color": {
+                "type": "string",
+                "enum": [
+                  "red",
+                  "yellow",
+                  "green",
+                  "blue"
+                ],
+                "description": "Signal color for type='led' or 'sevenSegment'."
+              },
+              "pinCount": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 32,
+                "description": "Number of individual taps for type='splitter'."
+              },
+              "pinBitWidth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32,
+                "description": "Bit width per tap for type='splitter'."
+              },
+              "clockwise": {
+                "type": "boolean",
+                "description": "Pin arrangement for type='splitter'."
+              },
+              "sensorType": {
+                "type": "string",
+                "enum": [
+                  "random",
+                  "manual",
+                  "series",
+                  "loop",
+                  "ascii",
+                  "keyCode",
+                  "sequence",
+                  "clock"
+                ],
+                "description": "Operating mode for type='sensor'."
+              },
+              "frequency": {
+                "type": "number",
+                "minimum": 20,
+                "maximum": 20000,
+                "description": "Tone frequency in Hz (20..20000) for type='sound'."
+              },
+              "waveform": {
+                "type": "string",
+                "enum": [
+                  "sine",
+                  "triangle",
+                  "square",
+                  "sawtooth"
+                ],
+                "description": "Waveform for type='sound'."
+              },
+              "synthesizerMode": {
+                "type": "string",
+                "enum": [
+                  "sine",
+                  "triangle",
+                  "square",
+                  "sawtooth",
+                  "noise"
+                ],
+                "description": "Synthesis mode for type='synthesizer'."
+              },
+              "addressBitWidth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "description": "Address bus bit width (1..16) for type='rom' or 'ram'."
+              },
+              "dataBitWidth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32,
+                "description": "Data word bit width (1..32 for rom/ram; 1, 2, 4, 8, 16, or 32 for graphicsArray)."
+              },
+              "bitsPerPixel": {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  4,
+                  8
+                ],
+                "description": "Color depth in bits per pixel (1, 2, 4, or 8) for type='graphicsArray'."
+              },
+              "zoom": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "description": "Pixel display zoom factor (1..4) for type='graphicsArray'."
+              },
+              "writeOn1": {
+                "type": "boolean",
+                "description": "For type='ram' or 'graphicsArray': false = write on falling edge (1->0), true = write on rising edge (0->1)."
+              },
+              "onStart": {
+                "type": "string",
+                "enum": [
+                  "random",
+                  "zeros",
+                  "ones",
+                  "data"
+                ],
+                "description": "Initialization mode on simulation start ('random', 'zeros', 'ones', 'data' for ram; 'random', 'zeros', 'ones' for graphicsArray)."
+              },
+              "dualPort": {
+                "type": "boolean",
+                "description": "Enables a second read port (Address2 / Data2) for type='rom' or 'ram'."
+              },
+              "data": {
+                "type": "string",
+                "description": "Configuration data for type='sensor', or Base64 contents for type='rom'/'ram'."
+              },
+              "fontFamily": {
+                "type": "string",
+                "enum": [
+                  "mono",
+                  "sans"
+                ],
+                "description": "Font family for type='textNote'."
+              },
+              "lineHeight": {
+                "type": "integer",
+                "enum": [
+                  9,
+                  12,
+                  18,
+                  36
+                ],
+                "description": "Line height in pixels for type='textNote' (9, 12, 18, or 36)."
+              }
+            },
+            "required": [
+              "type",
+              "x",
+              "y"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "wires": {
+          "type": "array",
+          "description": "List of wire connections to route between coordinates, existing symbols, or 'ref' references from 'components'.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object",
+                "description": "Start endpoint: { x, y }, { symbolId, pinName?, jamIndex? }, or { ref, pinName?, jamIndex? }.",
+                "properties": {
+                  "x": {
+                    "type": "integer",
+                    "description": "Grid X coordinate."
+                  },
+                  "y": {
+                    "type": "integer",
+                    "description": "Grid Y coordinate."
+                  },
+                  "symbolId": {
+                    "type": "string",
+                    "description": "ID of an already existing start symbol."
+                  },
+                  "ref": {
+                    "type": "string",
+                    "description": "Local 'ref' reference to a symbol placed in the same call."
+                  },
+                  "pinName": {
+                    "type": "string",
+                    "description": "Name or pinId of the terminal."
+                  },
+                  "jamIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "0-based index of the terminal in symbol.jams."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "to": {
+                "type": "object",
+                "description": "Target endpoint: { x, y }, { symbolId, pinName?, jamIndex? }, or { ref, pinName?, jamIndex? }.",
+                "properties": {
+                  "x": {
+                    "type": "integer",
+                    "description": "Grid X coordinate."
+                  },
+                  "y": {
+                    "type": "integer",
+                    "description": "Grid Y coordinate."
+                  },
+                  "symbolId": {
+                    "type": "string",
+                    "description": "ID of an already existing target symbol."
+                  },
+                  "ref": {
+                    "type": "string",
+                    "description": "Local 'ref' reference to a symbol placed in the same call."
+                  },
+                  "pinName": {
+                    "type": "string",
+                    "description": "Name or pinId of the terminal."
+                  },
+                  "jamIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "0-based index of the terminal in symbol.jams."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "route": {
+                "type": "string",
+                "enum": [
+                  "direct",
+                  "horizontal-first",
+                  "vertical-first"
+                ],
+                "description": "Wire routing mode: 'direct' (default), 'horizontal-first', or 'vertical-first'."
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "update_element_properties",
+    "title": "Update Element Properties & Size",
+    "description": "Updates properties and/or grid dimensions of an already placed component (symbolId) or text note (textNoteId) in the active circuit atomically via CircuitContext (including pin/jam recalculation, optional wire rubberbanding via withWires, undo/redo delta, and AI highlighting).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "symbolId": {
+          "type": "string",
+          "description": "ID of the component to update (circuitSymbolId). Mutually exclusive with 'textNoteId'."
+        },
+        "textNoteId": {
+          "type": "string",
+          "description": "ID of the text note to update (textNoteId). Mutually exclusive with 'symbolId'."
+        },
+        "x": {
+          "type": "integer",
+          "description": "Optional new grid X coordinate (e.g. when resizing from the left edge)."
+        },
+        "y": {
+          "type": "integer",
+          "description": "Optional new grid Y coordinate (e.g. when resizing from the top edge)."
+        },
+        "withWires": {
+          "type": "boolean",
+          "description": "Whether connected wires should follow changed pin positions (default true, only for 'symbolId')."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 640,
+          "description": "New grid width (button, constant, probe, pin*: 2..20; ledMatrix: 2..11; textNote: 1..100), or pixel width (1..640) for GraphicsArray."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 480,
+          "description": "New grid height (button, constant, probe, pin*: 2..20; ledMatrix: 2..11; textNote: 1..100), or pixel height (1..480) for GraphicsArray."
+        },
+        "name": {
+          "type": "string",
+          "description": "New name (e.g. for Pin, Probe, LED Matrix, or Gate)."
+        },
+        "notation": {
+          "type": "string",
+          "description": "New label / notation (e.g. for Button, Sensor, Pin, or Probe)."
+        },
+        "jamNotation": {
+          "type": "string",
+          "description": "Short pin label on the outer sub-circuit symbol (only for Pin components)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Text content for 'textNoteId', or component note for 'symbolId'."
+        },
+        "description": {
+          "type": "string",
+          "description": "Alias for 'note' on components."
+        },
+        "rotation": {
+          "type": "string",
+          "enum": [
+            "up",
+            "right",
+            "down",
+            "left"
+          ],
+          "description": "New orientation (only for 'textNoteId'; use 'rotate_symbols' for symbols)."
+        },
+        "fontFamily": {
+          "type": "string",
+          "enum": [
+            "mono",
+            "sans"
+          ],
+          "description": "Font family for 'textNoteId'."
+        },
+        "lineHeight": {
+          "type": "integer",
+          "enum": [
+            9,
+            12,
+            18,
+            36
+          ],
+          "description": "Line height in pixels for 'textNoteId' (9, 12, 18, or 36)."
+        },
+        "gateType": {
+          "type": "string",
+          "enum": [
+            "and",
+            "or",
+            "xor",
+            "triState1",
+            "triState2"
+          ],
+          "description": "Gate type switch (between 'and'/'or'/'xor' or 'triState1'/'triState2')."
+        },
+        "inputCount": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 18,
+          "description": "Number of inputs for multi-input gates ('and', 'or', 'xor' including NAND/NOR/XNOR)."
+        },
+        "invertedOutput": {
+          "type": "boolean",
+          "description": "Inverts the output of a multi-input gate (e.g. AND <-> NAND)."
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "red",
+            "yellow",
+            "green",
+            "blue"
+          ],
+          "description": "Signal color for LED or 7-segment display."
+        },
+        "isToggle": {
+          "type": "boolean",
+          "description": "For Button: true = latching toggle switch, false = momentary push button."
+        },
+        "inverted": {
+          "type": "boolean",
+          "description": "Inverts the signal on Button or Pin."
+        },
+        "keyCode": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "WPF key code for keyboard triggers on Button."
+        },
+        "modifiers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Modifier bitmask for keyboard triggers on Button."
+        },
+        "pinSide": {
+          "type": "string",
+          "enum": [
+            "left",
+            "top",
+            "right",
+            "bottom"
+          ],
+          "description": "Terminal edge side on Button, Constant, Probe, Pin, or Sensor."
+        },
+        "pinType": {
+          "type": "string",
+          "enum": [
+            "input",
+            "output"
+          ],
+          "description": "Terminal direction ('input' or 'output') on Pin."
+        },
+        "bitWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Bit width on Constant, Pin, Sensor, or Splitter."
+        },
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Output value on Constant."
+        },
+        "isHex": {
+          "type": "boolean",
+          "description": "Hexadecimal display on Constant or Probe."
+        },
+        "displayFormat": {
+          "type": "string",
+          "enum": [
+            "hex",
+            "dec",
+            "bin"
+          ],
+          "description": "Display format on Probe ('hex', 'dec', or 'bin')."
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Number of rows on LED Matrix (1..10)."
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Number of columns on LED Matrix (1..10)."
+        },
+        "matrixType": {
+          "type": "string",
+          "enum": [
+            "individual",
+            "selector"
+          ],
+          "description": "Drive mode on LED Matrix."
+        },
+        "cellShape": {
+          "type": "string",
+          "enum": [
+            "round",
+            "rect"
+          ],
+          "description": "Cell shape on LED Matrix."
+        },
+        "colors": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Bits per LED (1..3) on LED Matrix."
+        },
+        "persistenceMultiplier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Persistence multiplier (1..3) on LED Matrix."
+        },
+        "pinCount": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 32,
+          "description": "Number of individual taps on Splitter."
+        },
+        "pinBitWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Bit width per individual tap on Splitter."
+        },
+        "clockwise": {
+          "type": "boolean",
+          "description": "Pin arrangement on Splitter."
+        },
+        "sensorType": {
+          "type": "string",
+          "enum": [
+            "random",
+            "manual",
+            "series",
+            "loop",
+            "ascii",
+            "keyCode",
+            "sequence",
+            "clock"
+          ],
+          "description": "Operating mode on Sensor."
+        },
+        "frequency": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 20000,
+          "description": "Tone frequency in Hz (20..20000) on Sound."
+        },
+        "waveform": {
+          "type": "string",
+          "enum": [
+            "sine",
+            "triangle",
+            "square",
+            "sawtooth"
+          ],
+          "description": "Oscillator waveform on Sound."
+        },
+        "synthesizerMode": {
+          "type": "string",
+          "enum": [
+            "sine",
+            "triangle",
+            "square",
+            "sawtooth",
+            "noise"
+          ],
+          "description": "Synthesis mode on Synthesizer."
+        },
+        "addressBitWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Address bus bit width (1..16) on ROM or RAM."
+        },
+        "dataBitWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Data word bit width (1..32 on ROM/RAM; 1, 2, 4, 8, 16, or 32 on GraphicsArray)."
+        },
+        "bitsPerPixel": {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "description": "Color depth in bits per pixel (1, 2, 4, or 8) on GraphicsArray."
+        },
+        "zoom": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Pixel display zoom factor (1..4) on GraphicsArray."
+        },
+        "writeOn1": {
+          "type": "boolean",
+          "description": "Write edge polarity on RAM or GraphicsArray (false = falling edge, true = rising edge)."
+        },
+        "onStart": {
+          "type": "string",
+          "enum": [
+            "random",
+            "zeros",
+            "ones",
+            "data"
+          ],
+          "description": "Initialization mode on simulation start ('random', 'zeros', 'ones', 'data' on RAM; 'random', 'zeros', 'ones' on GraphicsArray)."
+        },
+        "dualPort": {
+          "type": "boolean",
+          "description": "Enables second read port (Address2 / Data2) on ROM or RAM."
+        },
+        "data": {
+          "type": "string",
+          "description": "Configuration data on Sensor, or Base64 contents on ROM/RAM."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "set_current_circuit",
+    "title": "Set Current Circuit",
+    "description": "Switches the currently open and active circuit in the browser editor by its logicalCircuitId.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuitId": {
+          "type": "string",
+          "description": "ID of the circuit to activate (logicalCircuitId)."
+        }
+      },
+      "required": [
+        "circuitId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "update_circuit_properties",
+    "title": "Update Circuit Properties",
+    "description": "Updates metadata of a circuit (name, category, note/description) including synchronization of embedded sub-circuit instances and undo delta.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuitId": {
+          "type": "string",
+          "description": "ID of the circuit to edit (logicalCircuitId). Defaults to the currently active circuit."
+        },
+        "name": {
+          "type": "string",
+          "description": "New display name of the circuit (non-empty)."
+        },
+        "notation": {
+          "type": "string",
+          "description": "Label or short notation shown on the placed sub-circuit symbol."
+        },
+        "category": {
+          "type": "string",
+          "description": "New palette category for the circuit."
+        },
+        "note": {
+          "type": "string",
+          "description": "New description or note for the circuit."
+        },
+        "description": {
+          "type": "string",
+          "description": "Alias for 'note' describing the circuit."
+        },
+        "circuitShape": {
+          "type": "string",
+          "enum": [
+            "rectangular",
+            "flipFlop",
+            "mux",
+            "demux",
+            "alu",
+            "display"
+          ],
+          "description": "Symbol shape when embedded as a sub-circuit ('display' only when containing display components)."
+        },
+        "showLabelAbove": {
+          "type": "boolean",
+          "description": "Web extension: displays the component label above the enclosure instead of inside."
+        },
+        "displayMargin": {
+          "type": "string",
+          "enum": [
+            "none",
+            "horizontal",
+            "vertical",
+            "all"
+          ],
+          "description": "Web extension for 'display' shape: margin around embedded display elements (+1 grid unit per selected direction)."
+        },
+        "exportToHDL": {
+          "type": "boolean",
+          "description": "Whether the circuit is marked for HDL export."
+        },
+        "pinOrder": {
+          "type": "array",
+          "description": "Optional pin sort indices per pin ID (0 = graphical order, >0 = explicit order per edge).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pinId": {
+                "type": "string",
+                "description": "ID of the pin (pinId)."
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Sort index (0 = graphical, >=1 = explicit)."
+              }
+            },
+            "required": [
+              "pinId",
+              "index"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "create_circuits",
+    "title": "Create Circuits",
+    "description": "Creates one or more new logical (sub-)circuits atomically in a single call within the project.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuits": {
+          "type": "array",
+          "minItems": 1,
+          "description": "List of circuits to create.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the new circuit (e.g. 'FullAdder1Bit')."
+              },
+              "notation": {
+                "type": "string",
+                "description": "Optional label / short notation shown on the sub-circuit symbol."
+              },
+              "category": {
+                "type": "string",
+                "description": "Optional palette category (e.g. 'Arithmetic')."
+              },
+              "note": {
+                "type": "string",
+                "description": "Optional description or note for the circuit."
+              },
+              "circuitShape": {
+                "type": "string",
+                "enum": [
+                  "rectangular",
+                  "flipFlop",
+                  "mux",
+                  "demux",
+                  "alu"
+                ],
+                "description": "Optional symbol shape (default: 'rectangular')."
+              },
+              "showLabelAbove": {
+                "type": "boolean",
+                "description": "Optional: display label above the symbol."
+              },
+              "displayMargin": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "horizontal",
+                  "vertical",
+                  "all"
+                ],
+                "description": "Optional: margin for later display symbol shapes."
+              },
+              "exportToHDL": {
+                "type": "boolean",
+                "description": "Optional: enable HDL export."
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "circuits"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "delete_circuits",
+    "title": "Delete Circuits",
+    "description": "Removes one or more circuits by ID from the project, provided at least one circuit remains and no remaining circuit embeds them as a sub-circuit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuitIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of the circuits to delete (logicalCircuitId)."
+        }
+      },
+      "required": [
+        "circuitIds"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "validate_circuit",
+    "title": "Validate Circuit",
+    "description": "Statically checks a circuit (including embedded sub-circuits) for design errors such as floating inputs, short circuits (multiple drivers), bit-width conflicts, and recursion cycles.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuitId": {
+          "type": "string",
+          "description": "Optional ID of the circuit to validate (default: currently active circuit)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "set_input_signal",
+    "title": "Set Input Signal",
+    "description": "Deterministically sets or toggles one or more input push buttons or latching switches during simulation (automatically initializes in pause mode if needed). Multiple push buttons can stay held (on: true) until explicitly released (on: false) and propagate combinatorially even while paused.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "circuitId": {
+          "type": "string",
+          "description": "Optional ID of the root circuit for simulation (default: running root circuit or active circuit)."
+        },
+        "instancePath": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional path of circuitSymbolIds starting from the root circuit when inputs reside inside a specific sub-circuit instance."
+        },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "description": "List of buttons/switches to actuate.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "symbolId": {
+                "type": "string",
+                "description": "circuitSymbolId of the button/toggle switch."
+              },
+              "on": {
+                "type": "boolean",
+                "description": "Target state (true = High/pressed, false = Low/released). Also works deterministically on toggle switches."
+              },
+              "toggle": {
+                "type": "boolean",
+                "description": "When true, toggles a toggle switch (isToggle=true) regardless of its current state."
+              }
+            },
+            "required": [
+              "symbolId"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "inputs"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "step_simulation",
+    "title": "Control, Step & Inspect Simulation",
+    "description": "Primary simulation tool: controls start/pause/stop/reset, advances deterministically by X ticks/frames (works both with clocks and in clockless circuits), supports timed input events ('events' with atStep) in a single call, and optionally returns logical state (including unique sub-circuit instance path) and a PNG screenshot in the same call.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "step",
+            "start",
+            "pause",
+            "stop",
+            "reset"
+          ],
+          "description": "Simulation action to execute (default: 'step')."
+        },
+        "circuitId": {
+          "type": "string",
+          "description": "Optional ID of the root circuit on which simulation should start or run (default: active or already running root circuit)."
+        },
+        "instancePath": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Concrete path of circuitSymbolIds from the root circuit to a specific sub-circuit instance (e.g. ['sym-fa1']) when states or a screenshot of that instance are needed."
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "Number of deterministic simulation ticks/frames for action='step' (default: 1). Works without clocks as well (no-clock optimization). With steps=0, stabilizes or queries state/screenshot without advancing ticks."
+        },
+        "events": {
+          "type": "array",
+          "description": "Optional timed input events within this simulation run (only for action='step'), e.g. 'steps: 35' with [{atStep: 3, symbolId: '...', toggle: true}, {atStep: 7, symbolId: '...', on: true}, {atStep: 9, symbolId: '...', on: false}].",
+          "items": {
+            "type": "object",
+            "properties": {
+              "atStep": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Tick index within this step_simulation call (0 = before tick 1, 1..steps = at start of tick k before evaluation)."
+              },
+              "symbolId": {
+                "type": "string",
+                "description": "circuitSymbolId of the button/toggle switch to actuate."
+              },
+              "instancePath": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Optional path of circuitSymbolIds from the root circuit if the button is inside a sub-circuit (default: root circuit)."
+              },
+              "on": {
+                "type": "boolean",
+                "description": "Target state (true = pressed/ON, false = released/OFF). Multiple buttons can stay held across overlapping ticks."
+              },
+              "toggle": {
+                "type": "boolean",
+                "description": "Toggles a toggle switch (isToggle=true) at this tick."
+              }
+            },
+            "required": [
+              "atStep",
+              "symbolId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "frameRateLimit": {
+          "description": "Optional target clock frequency in Hz for continuous run (1, 2, 5, 10, 20, 30, 60, or 'max')."
+        },
+        "includeState": {
+          "type": "boolean",
+          "description": "When true, returns telemetry, available instance paths, probes, buttons, wire states, and device/pin states of the selected instance."
+        },
+        "symbolIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional filter for specific symbols in the selected instance when includeState=true."
+        },
+        "includeScreenshot": {
+          "type": "boolean",
+          "description": "When true, awaits canvas rendering after the simulation step or instance switch and attaches a PNG screenshot."
+        },
+        "captureMode": {
+          "type": "string",
+          "enum": [
+            "circuit",
+            "viewport"
+          ],
+          "description": "Capture region when includeScreenshot=true: 'circuit' (default) or 'viewport'."
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  }
+]

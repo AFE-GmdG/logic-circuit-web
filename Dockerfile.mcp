@@ -1,0 +1,23 @@
+# Schlankes Runtime-Image für das zustandslose Remote-MCP-Relay (ohne npm-Abhängigkeiten)
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY package.json ./
+COPY server/standaloneServer.ts server/mcpRelay.ts server/webSocketConnection.ts server/privacyConfig.ts ./server/
+COPY src/mcp/mcpEvents.ts ./src/mcp/mcpEvents.ts
+COPY src/types/privacyConfig.ts ./src/types/privacyConfig.ts
+COPY src/types/mcp/mcpBridgeRequest.ts src/types/mcp/mcpBridgeResponse.ts ./src/types/mcp/
+
+USER node
+
+ENV NODE_ENV=production
+ENV PORT=3001
+ENV HOST=0.0.0.0
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3001) + '/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+CMD ["node", "--experimental-strip-types", "server/standaloneServer.ts"]

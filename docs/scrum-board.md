@@ -7,8 +7,7 @@
 
 ## 🚀 Aktive User Story
 
-### [US-001: Projekt-Setup und Toolchain-Grundgerüst](user_stories/US-001-projekt-setup-und-grundgeruest.md)
-*Status: In Bearbeitung • Priorität: Hoch*
+*Aktuell ist keine User Story aktiv — Version 1.0.0 ist abgeschlossen. Nächste Story bei Bedarf aus der Post-1.0 Roadmap wählen.*
 
 ```mermaid
 kanban
@@ -17,39 +16,40 @@ kanban
   Review[Review]
   Rejected[Rejected]
   Done[Done]
-    T001[T-001: Toolchain & Grundgerüst]
 ```
 
-**Tasks:**
-- ✅ [T-001: Projekt-Setup, Toolchain und Referenz-Submodul](tasks/T-001-projekt-setup-und-toolchain.md)
+---
+
+## ✅ Abgeschlossene User Stories (Release 1.0)
+
+Sämtliche für **Version 1.0.0** abgeschlossenen User Stories (`US-001` bis `US-015` sowie `US-018` bis `US-023`), Tasks (`T-001` bis `T-067`) und behobenen Bugs (`B-001`, `B-003`, `B-004`) sind in der ausgelagerten Chronik zusammengefasst:
+
+👉 **[📜 Was bisher geschah – Chronik zu Release 1.0 (`docs/history-1.0.md`)](history-1.0.md)**
 
 ---
 
-## ✅ Abgeschlossene User Stories
+## 📖 Backlog
 
-| Story | Titel | Abgeschlossene Tasks & Fixes |
-| :--- | :--- | :--- |
+*Für Version 1.0 sind alle geplanten User Stories abgeschlossen.*
 
 ---
 
-## 📖 Backlog (Zukünftige User Stories)
+## 🔭 Post-1.0 Roadmap (Zurückgestellt)
 
 | Story | Titel | Priorität | Kurzbeschreibung |
 | :--- | :--- | :--- | :--- |
-| **US-002** | Schematics Canvas und Raster-Navigation | Hoch | Zoom- und panbarer SVG/HTML5-Canvas mit Punktraster, Koordinaten-Snapping und Selektionsrahmen. |
-| **US-003** | Grundlegende Logik-Gatter und Komponenten-Palette | Hoch | Seitenleiste mit Gattern (AND, OR, NOT, XOR, NAND, NOR) und Drag&Drop auf den Canvas. |
-| **US-004** | Leitungsverlegung und Signal-Knoten (Wires & Conductors) | Hoch | Orthogonale Leitungsführung zwischen Komponenten-Pins mit Kreuzungen und Verzweigungspunkten. |
-| **US-005** | Digitale Simulations-Engine und Signal-Propagation | Hoch | Eventbasierte oder getaktete Logik-Engine zur Berechnung von Signalstufen (Low, High, Undefined). |
-| **US-006** | Interaktive I/O-Elemente (Taster, Schalter, Probes, 7-Segment) | Mittel | Interaktives Schalten von Eingängen und visuelle Zustandsanzeige an Ausgängen und Displays. |
-| **US-007** | Hierarchische Schaltungen (Sub-Circuits) | Mittel | Wiederverwendung von gezeichneten Teilschaltungen als gekapselte Komponentenbausteine. |
-| **US-008** | LogicCircuit XML-Projektformat Import & Export | Mittel | Lesen und Speichern nativer `.LogicCircuit`-Projektdateien aus der C#-Desktopanwendung. |
+| **[US-016](user_stories/US-016-post-10-analyse-und-export-werkzeuge.md)** | Post-1.0 Analyse- & Export-Werkzeuge | Niedrig | Wahrheitstabelle (`DialogTruthTable` inkl. `validators`), Oszilloskop (`DialogOscilloscope`), Verwendungsnachweis (`DialogUsage`), Schaltungsbericht (`DialogReport`) und HDL-Export (Verilog/VHDL). |
+| **[US-017](user_stories/US-017-post-10-schaltungs-bibliothek-und-verwaltung.md)** | Post-1.0 Schaltungs-Bibliothek & Bibliotheksverwaltung | Niedrig | Aufbau und Verwaltung einer persistenten Bibliothek wiederverwendbarer Schaltungen (Standard-ICs & eigene Bausteine) zur direkten Übernahme in laufende Projekte inkl. `.lcweb`- und `.CircuitProject`-Austausch. |
 
 ---
 
 ## 🐛 Gemeldete Bugs & Fehlertracking
 
+> 📚 Alle in Version 1.0 behobenen Bugs (`B-001`, `B-003`, `B-004`) sind in **[`docs/history-1.0.md`](history-1.0.md)** dokumentiert.
+
 | Bug | Titel | Priorität | Status | Kurzbeschreibung |
 | :--- | :--- | :--- | :--- | :--- |
+| **[B-002](bugs/B-002-copy-web-paste-desktop-ignoriert.md)** | Copy (Web) → Paste (Desktop) wird ignoriert | Mittel | 📋 Offen | Auswahl per `Strg+C` / Menü (*Für Desktop kopieren (XML)*) aus der WebApp wird beim Einfügen (`Strg+V`) in LogicCircuit Desktop (`2.26.9.1`) weiterhin ignoriert, während Desktop → Web (`utf-16` / Default-Namespace ohne Präfix) und Web ↔ Web funktionieren. |
 
 ---
 
@@ -62,4 +62,3 @@ kanban
 >   - 🔍 `Review` (Implementiert, wartet auf Abnahme)
 >   - ❌ `Rejected` (Abgelehnt / Nacharbeit erforderlich)
 >   - ✅ `Done` (Erfolgreich abgenommen & abgeschlossen)
-
