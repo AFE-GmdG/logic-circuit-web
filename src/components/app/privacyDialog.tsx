@@ -4,6 +4,8 @@ import ReactDOM from "react-dom";
 import styled from "@emotion/styled";
 import { useTranslation } from "react-i18next";
 
+import { isMcpDisabledByEnv } from "../../hooks/useMcpBridge";
+
 import type PrivacyConfig from "../../types/privacyConfig";
 
 import {
@@ -26,6 +28,7 @@ const PrivacyDialog = styled(({
   ...other
 }: PrivacyDialogProps) => {
   const { t } = useTranslation();
+  const mcpDisabled = isMcpDisabledByEnv();
   const baseConfig = React.useMemo(
     () => mergePrivacyConfig(getBuildPrivacyConfig(), initialConfig),
     [initialConfig],
@@ -46,11 +49,13 @@ const PrivacyDialog = styled(({
       }
 
       const controller = new AbortController();
-      void fetchRuntimePrivacyConfig(controller.signal).then((runtimeConfig) => {
-        if (runtimeConfig && !controller.signal.aborted) {
-          setConfig((prev) => mergePrivacyConfig(prev, runtimeConfig));
-        }
-      });
+      if (!mcpDisabled) {
+        void fetchRuntimePrivacyConfig(controller.signal).then((runtimeConfig) => {
+          if (runtimeConfig && !controller.signal.aborted) {
+            setConfig((prev) => mergePrivacyConfig(prev, runtimeConfig));
+          }
+        });
+      }
 
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") {
@@ -66,7 +71,11 @@ const PrivacyDialog = styled(({
         window.removeEventListener("keydown", handleKeyDown, { capture: true });
       };
     },
-    [isOpen, onClose],
+    [
+      isOpen,
+      mcpDisabled,
+      onClose,
+    ],
   );
 
   if (!isOpen) {
@@ -122,11 +131,7 @@ const PrivacyDialog = styled(({
               </div>
             ) : (
               <p className="privacy-text">
-                {t("dialog.privacy.noOperatorBeforeCodes")}{" "}
-                <code>PRIVACY_RESPONSIBLE_NAME</code>,{" "}
-                <code>PRIVACY_RESPONSIBLE_ADDRESS</code>{" "}
-                {t("dialog.privacy.noOperatorAnd")}{" "}
-                <code>PRIVACY_CONTACT_EMAIL</code>).
+                {t("dialog.privacy.noOperatorBody")}
               </p>
             )}
           </section>
@@ -144,13 +149,15 @@ const PrivacyDialog = styled(({
                 <strong>{t("dialog.privacy.cookiesTitle")}</strong>{" "}
                 {t("dialog.privacy.cookiesBody")}
               </li>
-              <li>
-                <strong>{t("dialog.privacy.remoteMcpTitle")}</strong>{" "}
-                {t("dialog.privacy.remoteMcpBody")}
-              </li>
+              {!mcpDisabled && (
+                <li>
+                  <strong>{t("dialog.privacy.remoteMcpTitle")}</strong>{" "}
+                  {t("dialog.privacy.remoteMcpBody")}
+                </li>
+              )}
               <li>
                 <strong>{t("dialog.privacy.hostingTitle")}</strong>{" "}
-                {config.hostingLocation || t("dialog.privacy.hostingDefault")}
+                {config.hostingLocation || t(mcpDisabled ? "dialog.privacy.hostingStaticDefault" : "dialog.privacy.hostingDefault")}
               </li>
             </ul>
           </section>

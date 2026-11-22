@@ -511,8 +511,7 @@
     "privacy": {
       "title": "Datenschutz (DSGVO / GDPR)",
       "operatorSection": "Verantwortlicher & Kontakt",
-      "noOperatorBeforeCodes": "Keine Betreiberangaben hinterlegt (konfigurierbar über",
-      "noOperatorAnd": "und",
+      "noOperatorBody": "Für diese Instanz sind keine gesonderten Betreiberangaben hinterlegt. Die Anwendung verarbeitet Schaltungen ausschließlich lokal in Ihrem Browser, ohne personenbezogene Daten an einen Anwendungsserver zu übermitteln.",
       "emailLabel": "E-Mail:",
       "processingSection": "Datenverarbeitung & Hosting",
       "localTitle": "Lokale Ausführung:",
@@ -524,6 +523,7 @@
       "remoteMcpBody": "Nur bei manueller Aktivierung wird eine Verbindung zum zustandslosen Relay aufgebaut. Flüchtige Session-IDs existieren ausschließlich im RAM und werden nach Sitzungsende gelöscht.",
       "hostingTitle": "Hosting-Standort:",
       "hostingDefault": "Bereitstellung gemäß Server-Konfiguration des Betreibers.",
+      "hostingStaticDefault": "Statische Bereitstellung (rein clientseitige Ausführung im Browser).",
       "rightsSection": "Ihre Rechte",
       "rightsBody": "Bei Verarbeitung personenbezogener Daten stehen Ihnen nach Art. 15 ff. DSGVO das Recht auf Auskunft, Berichtigung, Löschung sowie Beschwerde bei einer zuständigen Datenschutzaufsichtsbehörde zu."
     },

@@ -1651,9 +1651,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     ],
   );
 
-  // Mausrad-Zoom zentriert auf die Cursorposition
+  // Mausrad-Zoom zentriert auf die Cursorposition (explizit non-passive, damit preventDefault ohne Browser-Warnung greift)
   const handleWheel = React.useCallback(
-    (event: React.WheelEvent<SVGSVGElement>) => {
+    (event: WheelEvent) => {
       event.preventDefault();
       const container = containerRef.current;
       if (!container) {
@@ -1680,6 +1680,21 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       setViewport(nextViewport);
     },
     [setViewport, viewport],
+  );
+
+  React.useEffect(
+    () => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+
+      container.addEventListener("wheel", handleWheel, { passive: false });
+      return () => {
+        container.removeEventListener("wheel", handleWheel);
+      };
+    },
+    [handleWheel],
   );
 
   // Starten des Leitungszeichnens (bei Klick nahe einem Pin) oder Verschiebens beim Klick auf ein Bauteil-Symbol
@@ -3815,7 +3830,6 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         ref={containerRef}
         className="schematic-viewport"
         style={{ cursor: cursorStyle }}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

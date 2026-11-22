@@ -34,6 +34,8 @@ jobs:
       - name: Build static MCP-free app for GitHub Pages
         env:
           VITE_DISABLE_MCP: "true"
+          PRIVACY_RESPONSIBLE_NAME: "Andreas Friedel"
+          PRIVACY_CONTACT_EMAIL: "afe-gmdg@gmx.de"
         run: yarn build:pages
 
       - name: Upload Pages artifact

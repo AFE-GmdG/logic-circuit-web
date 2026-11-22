@@ -7,7 +7,7 @@
 
 ## 🚀 Aktive User Story
 
-*Aktuell ist keine User Story aktiv — Version 1.0.0 ist abgeschlossen. Nächste Story bei Bedarf aus der Post-1.0 Roadmap wählen.*
+*Aktuell ist keine User Story aktiv — **US-024** ist abgeschlossen. Nächste Story bei Bedarf aus der Post-1.0 Roadmap wählen.*
 
 ```mermaid
 kanban
@@ -16,6 +16,8 @@ kanban
   Review[Review]
   Rejected[Rejected]
   Done[Done]
+    T068[T-068: DSGVO-Dialog ohne Betreiberangaben]
+    T069[T-069: Non-Passive Wheel-Zoom-Listener]
 ```
 
 ---
@@ -30,7 +32,9 @@ Sämtliche für **Version 1.0.0** abgeschlossenen User Stories (`US-001` bis `US
 
 ## 📖 Backlog
 
-*Für Version 1.0 sind alle geplanten User Stories abgeschlossen.*
+| Story | Titel | Priorität | Geplante Tasks | Kurzbeschreibung |
+| :--- | :--- | :--- | :--- | :--- |
+| *(Aktuell keine weiteren Stories im Backlog – US-024 ist in Bearbeitung)* | | | | |
 
 ---
 

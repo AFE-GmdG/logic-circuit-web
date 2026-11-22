@@ -511,8 +511,7 @@
     "privacy": {
       "title": "Privacy (GDPR)",
       "operatorSection": "Controller & Contact",
-      "noOperatorBeforeCodes": "No operator details configured (configurable via",
-      "noOperatorAnd": "and",
+      "noOperatorBody": "No separate operator details are configured for this instance. The application processes circuits exclusively locally in your browser without transmitting personal data to an application server.",
       "emailLabel": "Email:",
       "processingSection": "Data Processing & Hosting",
       "localTitle": "Local execution:",
@@ -524,6 +523,7 @@
       "remoteMcpBody": "Only when manually enabled is a connection established to the stateless relay. Ephemeral session IDs exist exclusively in RAM and are deleted when the session ends.",
       "hostingTitle": "Hosting location:",
       "hostingDefault": "Provided according to the operator's server configuration.",
+      "hostingStaticDefault": "Static hosting (purely client-side execution in the browser).",
       "rightsSection": "Your Rights",
       "rightsBody": "Where personal data is processed, you have rights under Art. 15 et seq. GDPR to access, rectification, erasure, and to lodge a complaint with a competent supervisory authority."
     },
