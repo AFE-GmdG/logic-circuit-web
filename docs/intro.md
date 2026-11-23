@@ -24,7 +24,7 @@ Logic Circuit Web folgt einer strikt User-Story- und Task-getriebenen Dokumentat
 docs/
 ├── coding-rules.md               # Verbindliche Entwicklungs- und Formatierungsrichtlinien
 ├── data-model.md                 # Tiefgehende Spezifikation des Referenz-Datenmodells (C#-Vorlage -> TS)
-├── history-1.0.md                # Chronik „Was bisher geschah“ (alle Stories, Tasks & Fixes bis Release 1.0)
+├── history.md                    # Chronik „Was bisher geschah“ (alle abgeschlossenen Releases)
 ├── intro.md                      # Dieses Dokument (Vision, Systemkonzept, Roadmap)
 ├── mcp.md                        # Spezifikation & Architektur der Model Context Protocol (MCP) Integration
 ├── scrum-board.md                # Kanban-Board

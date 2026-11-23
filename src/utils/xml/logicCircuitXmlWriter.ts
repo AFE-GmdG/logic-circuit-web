@@ -31,7 +31,6 @@ import {
   EMPTY_GUID,
   LOGIC_CIRCUIT_ATTRIBUTE_LENGTH_LIMIT,
   LOGIC_CIRCUIT_CURRENT_NAMESPACE,
-  LOGIC_CIRCUIT_XML_PREFIX,
   LOGICAL_CIRCUIT_DEFAULTS,
   PROJECT_DEFAULTS,
   XML_ROOT_NAME,
@@ -182,7 +181,6 @@ function formatFlowDocumentNote(note: string): string {
 
 // Serialisiert einen Datensatz analog zu CircuitProject.SaveRecords (Attribute < 4096 Zeichen, sonst Kind-Elemente)
 function serializeXmlRecord(tableName: string, fields: XmlFieldEntry[]): string {
-  const prefix = LOGIC_CIRCUIT_XML_PREFIX;
   const attrs: string[] = [];
   const childElements: string[] = [];
 
@@ -190,15 +188,15 @@ function serializeXmlRecord(tableName: string, fields: XmlFieldEntry[]): string 
     if (value.length < LOGIC_CIRCUIT_ATTRIBUTE_LENGTH_LIMIT) {
       attrs.push(`${name}="${escapeXmlAttribute(value)}"`);
     } else {
-      childElements.push(`\t\t<${prefix}:${name}>${escapeXmlText(value)}</${prefix}:${name}>`);
+      childElements.push(`\t\t<${name}>${escapeXmlText(value)}</${name}>`);
     }
   }
 
   const attrPart = attrs.length > 0 ? ` ${attrs.join(" ")}` : "";
   if (childElements.length === 0) {
-    return `\t<${prefix}:${tableName}${attrPart} />`;
+    return `\t<${tableName}${attrPart} />`;
   }
-  return `\t<${prefix}:${tableName}${attrPart}>\n${childElements.join("\n")}\n\t</${prefix}:${tableName}>`;
+  return `\t<${tableName}${attrPart}>\n${childElements.join("\n")}\n\t</${tableName}>`;
 }
 
 function clampInt(value: number, min: number, max: number): number {
@@ -252,8 +250,9 @@ function serializeLogicalCircuitRecord(lc: LogicalCircuit): string {
   if (lc.name !== LOGICAL_CIRCUIT_DEFAULTS.name) {
     fields.push(["Name", lc.name]);
   }
-  if (lc.notation !== "") {
-    fields.push(["Notation", lc.notation]);
+  const resolvedNotation = lc.notation !== "" ? lc.notation : (lc.name || LOGICAL_CIRCUIT_DEFAULTS.name);
+  if (resolvedNotation !== "") {
+    fields.push(["Notation", resolvedNotation]);
   }
   if (lc.note !== "") {
     fields.push(["Note", lc.note]);
@@ -1129,7 +1128,7 @@ export function serializeCircuitProjectToXml(sourceProject: CircuitProject): str
   const project = normalizeProjectForDesktopXml(sourceProject);
   const lines: string[] = [
     "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-    `<${LOGIC_CIRCUIT_XML_PREFIX}:${XML_ROOT_NAME} xmlns:${LOGIC_CIRCUIT_XML_PREFIX}="${LOGIC_CIRCUIT_CURRENT_NAMESPACE}">`,
+    `<${XML_ROOT_NAME} xmlns="${LOGIC_CIRCUIT_CURRENT_NAMESPACE}">`,
   ];
 
   lines.push(serializeProjectRecord(project.project));
@@ -1192,7 +1191,7 @@ export function serializeCircuitProjectToXml(sourceProject: CircuitProject): str
     }
   }
 
-  lines.push(`</${LOGIC_CIRCUIT_XML_PREFIX}:${XML_ROOT_NAME}>`);
+  lines.push(`</${XML_ROOT_NAME}>`);
   return lines.join("\n");
 }
 

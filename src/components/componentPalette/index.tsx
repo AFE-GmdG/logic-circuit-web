@@ -16,6 +16,7 @@ import type SensorType from "../../types/circuit/sensorType";
 import type SoundWaveform from "../../types/circuit/soundWaveform";
 import type SynthesizerMode from "../../types/circuit/synthesizerMode";
 
+import { isTestable } from "../../simulation/truthTable/circuitTestSocket";
 import { SOUND_DEFAULT_FREQUENCY } from "../../utils/audioPitchTable";
 import {
   createDefaultLogicalCircuit,
@@ -37,6 +38,8 @@ import {
 import PaletteCategory from "./paletteCategory";
 import PaletteItem from "./paletteItem";
 import ConfirmDialog from "../app/confirmDialog";
+import TruthTableDialog from "../app/truthTableDialog";
+import UsageDialog from "../app/usageDialog";
 import ContextMenuPopup, { type ContextMenuItem } from "../circuitCanvas/contextMenuPopup";
 import PropertyDialog from "../propertyDialog";
 import RunningCircuitTree from "../runningCircuitTree";
@@ -78,6 +81,8 @@ const ComponentPalette = styled(({
 
   const [isCreatingCircuit, setIsCreatingCircuit] = React.useState(false);
   const [editingCircuit, setEditingCircuit] = React.useState<LogicalCircuit | null>(null);
+  const [usageTargetCircuit, setUsageTargetCircuit] = React.useState<LogicalCircuit | null>(null);
+  const [truthTableTargetCircuit, setTruthTableTargetCircuit] = React.useState<LogicalCircuit | null>(null);
   const [pendingDeleteCircuit, setPendingDeleteCircuit] = React.useState<LogicalCircuit | null>(null);
   const [circuitActionError, setCircuitActionError] = React.useState<string | null>(null);
   const [circuitMenuState, setCircuitMenuState] = React.useState<{
@@ -776,6 +781,24 @@ const ComponentPalette = styled(({
               },
             },
             {
+              id: "palette-circuit-truth-table",
+              label: t("palette.contextMenu.truthTable"),
+              disabled: !isTestable(targetCircuit, circuitContext?.project),
+              tooltip: !isTestable(targetCircuit, circuitContext?.project)
+                ? t("menu.items.circuitTruthTableDisabledTooltip")
+                : t("menu.items.circuitTruthTableTooltip"),
+              onSelect: () => {
+                setTruthTableTargetCircuit(targetCircuit);
+              },
+            },
+            {
+              id: "palette-circuit-usage",
+              label: t("palette.contextMenu.usage"),
+              onSelect: () => {
+                setUsageTargetCircuit(targetCircuit);
+              },
+            },
+            {
               id: "palette-circuit-delete",
               label: t("palette.contextMenu.delete"),
               danger: true,
@@ -814,6 +837,20 @@ const ComponentPalette = styled(({
           }
         }}
         onCancel={() => setPendingDeleteCircuit(null)}
+      />
+
+      {/* Verwendungsnachweis für rechtsgeklickte Schaltung in der Palette */}
+      <UsageDialog
+        isOpen={usageTargetCircuit !== null}
+        targetCircuit={usageTargetCircuit}
+        onClose={() => setUsageTargetCircuit(null)}
+      />
+
+      {/* Wahrheitstabellen-Dialog für rechtsgeklickte testbare Schaltung in der Palette */}
+      <TruthTableDialog
+        isOpen={truthTableTargetCircuit !== null}
+        targetCircuit={truthTableTargetCircuit}
+        onClose={() => setTruthTableTargetCircuit(null)}
       />
     </aside>
   );

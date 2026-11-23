@@ -1,6 +1,11 @@
 import type LogicalCircuit from "../../types/circuit/logicalCircuit";
 import type FrameRateLimit from "../../types/simulation/frameRateLimit";
 import type GraphicsArraySnapshot from "../../types/simulation/graphicsArraySnapshot";
+import type {
+  OscilloscopeChannelSnapshot,
+  OscilloscopeSnapshot,
+  ProbeHistorySnapshot,
+} from "../../types/simulation/oscilloscope";
 
 import type {
   AudioChannelSnapshot,
@@ -41,6 +46,7 @@ export type CircuitRunnerOptions = {
   historySize?: number;
   frameRateLimit?: FrameRateLimit;
   sharedBuffer?: SharedArrayBuffer;
+  oscilloscoping?: boolean;
   onStatusChange?: (
     status: "powerOn" | "powerOff" | "running" | "paused" | "oscillating",
     telemetry: SimulationTelemetry,
@@ -53,6 +59,7 @@ export class CircuitRunner {
   readonly #circuitMap: CircuitMap;
   readonly #circuitState: CircuitState;
   readonly #probes = new Map<string, FunctionProbe>();
+  readonly #probesByRawId = new Map<string, FunctionProbe[]>();
   readonly #buttons = new Map<string, FunctionButton>();
   readonly #buttonsByRawId = new Map<string, FunctionButton[]>();
   readonly #sensors = new Map<string, FunctionSensor>();
@@ -61,10 +68,12 @@ export class CircuitRunner {
   readonly #lastSentGraphicsRevision = new Map<string, number>();
   readonly #memories = new Map<string, FunctionMemory>();
   readonly #audioChannels = new Map<string, FunctionSound | FunctionSynthesizer>();
+  readonly #historySize: number;
 
   #isRunning = false;
   #isPaused = false;
   #isOscillating = false;
+  #isOscilloscoping = false;
   #frameRateLimit: FrameRateLimit = 30;
   #actualFrequency = 0;
   #totalSteps = 0;
@@ -87,9 +96,11 @@ export class CircuitRunner {
     this.#circuit = circuit;
     this.#frameRateLimit = options.frameRateLimit ?? 30;
     this.#onStatusChange = options.onStatusChange;
+    this.#historySize = Math.max(1, Math.trunc(options.historySize ?? 100));
+    this.#isOscilloscoping = Boolean(options.oscilloscoping);
 
     this.#circuitMap = new CircuitMap(this.#circuit);
-    this.#circuitState = this.#circuitMap.apply(options.historySize ?? 100);
+    this.#circuitState = this.#circuitMap.apply(this.#historySize);
 
     // Registrierte Funktionen indizieren (Probes, Buttons, LED-Matrizen, Speicher)
     for (const fn of this.#circuitState.functions) {
@@ -97,6 +108,10 @@ export class CircuitRunner {
         const probeFn = fn as FunctionProbe;
         const id = probeFn.probeId ?? probeFn.label;
         this.#probes.set(id, probeFn);
+        const rawId = probeFn.rawProbeId ?? id;
+        const list = this.#probesByRawId.get(rawId) ?? [];
+        list.push(probeFn);
+        this.#probesByRawId.set(rawId, list);
       } else if (fn instanceof FunctionButton || fn.constructor.name.includes("Button")) {
         const btnFn = fn as FunctionButton;
         const id = btnFn.buttonId ?? `btn_${this.#buttons.size}`;
@@ -141,6 +156,10 @@ export class CircuitRunner {
 
   get isOscillating(): boolean {
     return this.#isOscillating;
+  }
+
+  get isOscilloscoping(): boolean {
+    return this.#isOscilloscoping;
   }
 
   get frameRateLimit(): FrameRateLimit {
@@ -244,6 +263,85 @@ export class CircuitRunner {
     };
   }
 
+  // Aktiviert oder pausiert die zeitliche Oszilloskop-Aufzeichnung aller Messsonden
+  setOscilloscoping(enabled: boolean): OscilloscopeSnapshot {
+    this.#isOscilloscoping = enabled;
+    if (enabled && this.#probes.size > 0) {
+      const firstProbe = this.#probes.values().next().value;
+      if (firstProbe && firstProbe.bitWidth > 0 && firstProbe.readBitHistory(0).length === 0) {
+        this.#tickProbes();
+      }
+    }
+    return this.readOscilloscope();
+  }
+
+  // Leert alle aufgezeichneten Oszilloskop-Spuren ohne die laufende Simulation zurückzusetzen
+  clearOscilloscope(): OscilloscopeSnapshot {
+    for (const probe of this.#probes.values()) {
+      probe.clearTickHistory();
+    }
+    return this.readOscilloscope();
+  }
+
+  // Liefert die aktuellen Oszilloskop-Kanäle aller Messsonden sortiert nach Instanzpfad
+  readOscilloscope(): OscilloscopeSnapshot {
+    const channels: OscilloscopeChannelSnapshot[] = [];
+    for (const probe of this.#probes.values()) {
+      channels.push(probe.toOscilloscopeChannel());
+    }
+    channels.sort((a, b) => a.path.localeCompare(b.path) || a.probeId.localeCompare(b.probeId));
+    const sampleCount = channels.reduce((max, ch) => Math.max(max, ch.sampleCount), 0);
+    return {
+      isOscilloscoping: this.#isOscilloscoping,
+      historySize: this.#historySize,
+      totalSteps: this.#totalSteps,
+      sampleCount,
+      channels,
+    };
+  }
+
+  // Liefert den Wertänderungsverlauf einer einzelnen Messsonde
+  readProbeHistory(probeId: string): ProbeHistorySnapshot | null {
+    const probe = this.#resolveProbe(probeId);
+    if (!probe) {
+      return null;
+    }
+    probe.updateState();
+    return probe.toHistorySnapshot();
+  }
+
+  // Fügt eine visuelle Markierung in den Wertänderungsverlauf einer Messsonde ein
+  markProbeHistory(probeId: string): ProbeHistorySnapshot | null {
+    const probe = this.#resolveProbe(probeId);
+    if (!probe) {
+      return null;
+    }
+    probe.updateState();
+    probe.mark();
+    return probe.toHistorySnapshot();
+  }
+
+  #resolveProbe(probeId: string): FunctionProbe | null {
+    const direct = this.#probes.get(probeId);
+    if (direct) {
+      return direct;
+    }
+    const list = this.#probesByRawId.get(probeId);
+    if (list && list.length === 1) {
+      return list[0];
+    }
+    return null;
+  }
+
+  #tickProbes(): void {
+    if (!this.#isOscilloscoping || this.#probes.size === 0) {
+      return;
+    }
+    for (const probe of this.#probes.values()) {
+      probe.tick();
+    }
+  }
+
   // Exportiert alle persistent konfigurierten RAM-Inhalte (onStart === "data") für das Projektmodell
   collectPersistentMemories(): PersistentMemoryDump[] {
     const result: PersistentMemoryDump[] = [];
@@ -306,10 +404,14 @@ export class CircuitRunner {
     this.#stopExecutionLoop();
     this.#isRunning = false;
     this.#isPaused = false;
+    this.#isOscilloscoping = false;
     this.#actualFrequency = 0;
     this.#totalSteps = 0;
     this.#stepCountInWindow = 0;
     this.#lastSentGraphicsRevision.clear();
+    for (const probe of this.#probes.values()) {
+      probe.clearTickHistory();
+    }
     this.#notifyStatus("powerOff");
   }
 
@@ -378,6 +480,7 @@ export class CircuitRunner {
         this.#handleOscillation();
         break;
       }
+      this.#tickProbes();
       steps++;
     }
     this.#totalSteps += steps;
@@ -411,6 +514,8 @@ export class CircuitRunner {
     if (!this.#isOscillating) {
       if (!this.#circuitState.evaluate(false)) {
         this.#handleOscillation();
+      } else if (!this.#circuitState.hasClocks) {
+        this.#tickProbes();
       }
     }
     return true;
@@ -430,6 +535,8 @@ export class CircuitRunner {
     if (!this.#isOscillating) {
       if (!this.#circuitState.evaluate(false)) {
         this.#handleOscillation();
+      } else if (!this.#circuitState.hasClocks) {
+        this.#tickProbes();
       }
     }
     return true;
@@ -447,6 +554,8 @@ export class CircuitRunner {
     if (!this.#isOscillating) {
       if (!this.#circuitState.evaluate(false)) {
         this.#handleOscillation();
+      } else if (!this.#circuitState.hasClocks) {
+        this.#tickProbes();
       }
     }
     return true;
@@ -482,6 +591,18 @@ export class CircuitRunner {
         value: probe.toNumeric(),
         text: probe.toText(true, probe.displayFormat),
       };
+    }
+    for (const [rawId, list] of this.#probesByRawId) {
+      if (!probes[rawId] && list.length > 0) {
+        const first = list[0];
+        probes[rawId] = {
+          probeId: rawId,
+          label: first.label,
+          bitWidth: first.bitWidth,
+          value: first.toNumeric(),
+          text: first.toText(true, first.displayFormat),
+        };
+      }
     }
 
     const buttons: Record<string, ButtonSnapshot> = {};
@@ -556,6 +677,8 @@ export class CircuitRunner {
       isOscillating: this.#isOscillating,
       oscillationLocation: this.#isOscillating ? this.#circuitState.lastOscillatingLocation : null,
       hasClocks: this.#circuitState.hasClocks,
+      hasProbes: this.#probes.size > 0,
+      isOscilloscoping: this.#isOscilloscoping,
       actualFrequency: this.#actualFrequency,
       totalSteps: this.#totalSteps,
       timestamp: performance.now(),
@@ -579,6 +702,7 @@ export class CircuitRunner {
   dispose(): void {
     this.stop();
     this.#probes.clear();
+    this.#probesByRawId.clear();
     this.#buttons.clear();
     this.#buttonsByRawId.clear();
     this.#sensors.clear();
@@ -603,6 +727,7 @@ export class CircuitRunner {
           this.#handleOscillation();
           return;
         }
+        this.#tickProbes();
         this.#totalSteps++;
         this.#stepCountInWindow++;
         this.#updateFrequencyMeasurement();
@@ -697,6 +822,7 @@ export class CircuitRunner {
         this.#handleOscillation();
         return;
       }
+      this.#tickProbes();
       completed++;
 
       if ((completed & (TIME_CHECK_STRIDE - 1)) === 0) {
@@ -709,6 +835,7 @@ export class CircuitRunner {
               this.#handleOscillation();
               return;
             }
+            this.#tickProbes();
             completed++;
           }
           break;
@@ -753,6 +880,9 @@ export class CircuitRunner {
         isPaused: this.#isPaused,
         isOscillating: this.#isOscillating,
         oscillationLocation: this.#isOscillating ? this.#circuitState.lastOscillatingLocation : null,
+        hasClocks: this.#circuitState.hasClocks,
+        hasProbes: this.#probes.size > 0,
+        isOscilloscoping: this.#isOscilloscoping,
         actualFrequency: this.#actualFrequency,
         totalSteps: this.#totalSteps,
         timestamp: performance.now(),

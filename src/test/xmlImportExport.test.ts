@@ -715,10 +715,12 @@ describe("LogicCircuit XML Serializer & UI (T-039)", () => {
 
     const exportedXml = exportProjectToXml(enriched);
 
-    // Desktop-Kompatibilität (2.0.0.14): kein <lc:Gate>, keine Web-only-Attribute, reine 36-Zeichen-GUID + FlowDocument
-    expect(exportedXml).toContain(`xmlns:lc="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
+    // Desktop-Kompatibilität (2.0.0.14): Default-Namespace ohne lc:-Präfix, kein <Gate>, keine Web-only-Attribute, 36-Zeichen-GUID + FlowDocument
+    expect(exportedXml).toContain(`xmlns="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
+    expect(exportedXml).not.toContain("xmlns:lc=");
+    expect(exportedXml).not.toContain("<lc:");
     expect(exportedXml).not.toContain("2.0.0.15");
-    expect(exportedXml).not.toContain("<lc:Gate");
+    expect(exportedXml).not.toContain("<Gate");
     expect(exportedXml).toContain("CircuitId=\"00000000-0000-0000-0000-000000080100\"");
     expect(exportedXml).not.toContain("Color=");
     expect(exportedXml).not.toContain("IsHex=");
@@ -730,7 +732,7 @@ describe("LogicCircuit XML Serializer & UI (T-039)", () => {
     expect(exportedXml).not.toContain("FontFamily=");
     expect(exportedXml).not.toContain("LineHeight=");
     expect(exportedXml).not.toContain("LineHeights=");
-    expect(exportedXml).toContain("<lc:Data>");
+    expect(exportedXml).toContain("<Data>");
     expect(exportedXml).toContain("&lt;FlowDocument");
 
     const reimported = importProjectFromXml(exportedXml);
@@ -948,7 +950,7 @@ describe("LogicCircuit XML Serializer & UI (T-039)", () => {
     expect((bySymId.get("a1000000-0000-0000-0000-000000000013")?.circuit as { color?: string }).color).toBe("blue");
 
     const reExported = exportProjectToXml(imported);
-    expect(reExported).toContain(`xmlns:lc="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
+    expect(reExported).toContain(`xmlns="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
     expect(reExported).not.toContain("Color=");
     expect(reExported).toContain("CircuitId=\"00000000-0000-0000-0000-000000080100\"");
   });
@@ -1182,7 +1184,7 @@ describe("LogicCircuit XML Serializer & UI (T-039)", () => {
     mainLc.wires.push(wireNeg);
 
     const xml = exportProjectToXml(project);
-    expect(xml).toContain(`xmlns:lc="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
+    expect(xml).toContain(`xmlns="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
     expect(xml).toContain("SensorType=\"ASCII\"");
     expect(xml).toContain("Zoom=\"3\"");
     expect(xml).toContain("Frequency=\"50\"");

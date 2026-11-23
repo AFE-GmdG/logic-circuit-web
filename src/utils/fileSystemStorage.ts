@@ -860,3 +860,58 @@ export async function readFileFromDirectory(
     return null;
   }
 }
+
+export type ExportFilesToDirectoryResult =
+  | { kind: "saved"; directoryName: string; fileCount: number }
+  | { kind: "cancelled" }
+  | { kind: "unsupported" }
+  | { kind: "denied" };
+
+// Prüft unabhängig vom Open/Save-Picker, ob der Verzeichnis-Picker verfügbar ist
+export function isDirectoryPickerSupported(deps?: FileSystemDeps): boolean {
+  const win = resolvePickerWindow(deps);
+  return typeof win?.showDirectoryPicker === "function";
+}
+
+// Schreibt mehrere generierte Textdateien (z. B. HDL-Module & Testbenches) in ein gewähltes Zielverzeichnis
+export async function exportTextFilesToDirectory(
+  files: readonly { fileName: string; content: string }[],
+  startInHandle?: FileSystemHandleLike | null,
+  deps?: FileSystemDeps,
+): Promise<ExportFilesToDirectoryResult> {
+  const win = resolvePickerWindow(deps);
+  if (!win || typeof win.showDirectoryPicker !== "function") {
+    return { kind: "unsupported" };
+  }
+
+  let dirHandle: FileSystemDirectoryHandleLike;
+  try {
+    dirHandle = await win.showDirectoryPicker({
+      mode: "readwrite",
+      startIn: startInHandle ?? undefined,
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      return { kind: "cancelled" };
+    }
+    throw error;
+  }
+
+  const permission = await requestHandlePermission(dirHandle, "readwrite");
+  if (permission !== "granted" || typeof dirHandle.getFileHandle !== "function") {
+    return { kind: "denied" };
+  }
+
+  for (const file of files) {
+    const fileHandle = await dirHandle.getFileHandle(file.fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(file.content);
+    await writable.close();
+  }
+
+  return {
+    kind: "saved",
+    directoryName: dirHandle.name,
+    fileCount: files.length,
+  };
+}

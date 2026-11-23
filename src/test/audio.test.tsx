@@ -546,7 +546,7 @@ describe("US-021 / T-022: Akustische Ausgabekomponenten (Summer & 8-Bit-Synthesi
       expect(compat.warnings.some((w) => w.code === "unsupported-component-kind")).toBe(true);
 
       const xml = serializeCircuitProjectToXml(project);
-      expect(xml).toContain("lc:Sound");
+      expect(xml).toContain("<Sound");
       expect(xml).not.toContain("syn-rt");
     });
   });

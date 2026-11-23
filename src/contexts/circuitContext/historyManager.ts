@@ -545,6 +545,7 @@ function applyLogicalCircuitSnapshot(
       ...(snapshot.showLabelAbove !== undefined ? { showLabelAbove: snapshot.showLabelAbove } : {}),
       ...(snapshot.displayMargin !== undefined ? { displayMargin: snapshot.displayMargin } : {}),
       ...(snapshot.exportToHDL !== undefined ? { exportToHDL: snapshot.exportToHDL } : {}),
+      ...(snapshot.validators !== undefined ? { validators: snapshot.validators } : {}),
       logicalPins: pinOrderMap ? lc.logicalPins.map(updatePinIndex) : lc.logicalPins,
     };
     nextCircuits.set(updatedLc.circuitId, updatedLc);

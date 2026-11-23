@@ -65,6 +65,10 @@ export class CircuitState {
     this.#functionLocations.set(fn, location);
   }
 
+  getFunctionLocation(fn: CircuitFunction): SimulationErrorLocation | undefined {
+    return this.#functionLocations.get(fn);
+  }
+
   // Reserviert einen neuen Signalindex im flachen Zustandsvektor
   reserveState(): number {
     return this.count++;

@@ -133,7 +133,7 @@ Im Frontend verbindet sich der Hook (`useMcpBridge`) je nach Umgebung:
 
 ## Roadmap & Scrum-Einordnung
 
-Sämtliche Meilensteine der lokalen und Remote-MCP-Integration (US-009, US-018 und US-019 mit den Tasks T-017 bis T-021, T-024 sowie T-051 bis T-057) sind vollständig in Release 1.0 umgesetzt. Die detaillierte Übersicht befindet sich in der Chronik **[Was bisher geschah – Release 1.0](history-1.0.md)**.
+Sämtliche Meilensteine der lokalen und Remote-MCP-Integration (US-009, US-018 und US-019 mit den Tasks T-017 bis T-021, T-024 sowie T-051 bis T-057) sind vollständig in Release 1.0 umgesetzt. Die detaillierte Übersicht befindet sich in der Chronik **[Was bisher geschah – Release-Chronik](history.md)**.
 
 ---
 

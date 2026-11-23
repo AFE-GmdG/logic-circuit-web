@@ -1,12 +1,36 @@
-# Was bisher geschah – Chronik zu Release 1.0
+# Was bisher geschah – Release-Chronik
 
 [← Zurück zur Übersicht](intro.md) • [📋 Zum Scrum-Board](scrum-board.md)
 
-Dieses Dokument fasst sämtliche bis zum Abschluss von **Version 1.0.0** umgesetzten User Stories (`US-001` bis `US-015` sowie `US-018` bis `US-023`), technischen Arbeitspakete (`T-001` bis `T-067`) und behobenen Fehlerberichte (`B-001`, `B-003`, `B-004`) thematisch zusammen. Die ursprünglichen Einzeldateien wurden im Rahmen von `US-023` (`T-064`) zugunsten einer kompakten, kontextschonenden Projektdokumentation konsolidiert.
+Dieses Dokument fasst die abgeschlossenen User Stories, technischen Arbeitspakete und behobenen Fehlerberichte der Haupt- und Feature-Releases von **Logic Circuit Web** thematisch zusammen (`Release 1.1.0` sowie `Release 1.0.0`). Die ursprünglichen Einzeldateien der ersten Produktversion wurden im Rahmen von `US-023` (`T-064`) zugunsten einer kompakten, kontextschonenden Projektdokumentation konsolidiert.
 
 ---
 
-## Projekt-Setup, Schematics-Canvas & Raster-Navigation (`US-001`, `US-002`)
+## Release 1.1.0 – Analyse, Oszilloskop & HDL-Export
+
+Im Minor-Release **1.1.0** wurde Logic Circuit Web um Analyse-, Debugging- und Export-Werkzeuge erweitert (`US-016`, `US-024`, `US-025`, `US-026` inklusive `T-068` bis `T-079` sowie Bugfix `B-002`):
+
+- **Wahrheitstabelle, Verwendungsnachweis & Schaltungsbericht (`US-016` / `T-070`, `T-071`, `T-072`):**
+  - **Verwendungsnachweis (`UsageDialog`):** Zeigt hierarchisch alle übergeordneten Schaltungen inklusive konkreter Subschaltungs-Fundstellen und direkter Sprungnavigation an.
+  - **Schaltungsbericht (`ReportDialog`):** Erstellt eine strukturierte Projekt- und Schaltungsstatistik (Bauteile, Pins, Subschaltungs-Hierarchie, Beschreibungen) inklusive Markdown-Export und Zwischenablage-Kopie.
+  - **Wahrheitstabelle (`CircuitTestSocket`, `ExpressionParser` & `TruthTableDialog`, `Strg+T`):** Vollständige bzw. gefilterte Auswertung kombinatorischer Schaltungen im WebWorker bis `4096` Zeilen inklusive referenzgetreuem `validators`-Ausdrucks-Parser, Sortierung, Filter-Verlauf und TSV-/CSV-Export.
+- **Oszilloskop & zeitlicher Signalverlauf (`US-025` / `T-073`, `T-074`, `T-075`):**
+  - **Signalhistorie im Worker (`OscilloscopeRecorder`):** Ringpuffer-Aufzeichnung aller `CircuitProbe`-Zustände (`0`, `1`, `Z`) je Simulationsschritt sowie benutzerdefinierter Trennmarkierungen.
+  - **Einzelsonden-Verlauf (`ProbeHistoryDialog`):** Kontextmenü- und Doppelklick-Inspektion einzelner Messsonden inklusive Markieren und Kopieren des Signalverlaufs.
+  - **Interaktives Oszilloskop (`OscilloscopeDialog`, `Strg+O`):** Schwebend und innerhalb des Viewports frei verschiebbares Timing-Diagramm mit Einzelbit-Rechteckkurven, Multi-Bit-Bus-Blöcken (`Hex`/`Dez`/`Bin`), aufklappbaren Einzelbit-Spuren, Zeitachsen-Zoom und Mess-Cursor.
+- **HDL-Export für Verilog, VHDL & Nand2Tetris (`US-026` / `T-076`, `T-077`, `T-078`, `T-079`):**
+  - **Gemeinsame HDL-Zwischendarstellung & Validierung (`T-076`):** Extraktion eines topologisch sortierten Netzlistengraphen inklusive `Splitter`-Bitbereichs-Propagation, Schleifen- und Jam-Kollisionserkennung, drei wählbaren Export-Umfängen (`Aktive Schaltung`, `inkl. Subschaltungen`, `mit exportToHDL markiert`) sowie Truth-Table-Vektorextraktion bis 16 Eingangsbits.
+  - **Verilog/SystemVerilog & VHDL (`T-077`):** Generierung von `.sv`-Modulen inkl. RAM/ROM-Submodulen und `_TestBench.sv` sowie synthesiefähigem IEEE `std_logic_1164` / `numeric_std`-VHDL (`.vhd` inkl. VHDL-93-kompatibler Konkatenationssignale und `_tb.vhd`).
+  - **Nand2Tetris HDL (`T-078`):** Referenzgetreue `.hdl`-, `.tst`- und `.cmp`-Generierung inklusive automatischer Baum-Zerlegung von Multi-Input-, `NOR`- und `XNOR`-Gattern (`FixBigGates`) sowie Abbildung auf `RAM8`–`RAM16K` und `ROM32K`.
+  - **HDL-Export-Dialog (`ExportHdlDialog`, `T-079`):** Interaktiver Dialog unter *Datei / Projekt → Nach HDL exportieren...* mit Zielformat- und Umfangsauswahl, Live-Code-Vorschau mit Datei-Tabs, Diagnose-Log, Einzeldownload und Mehrdatei-Ordner-Export via File System Access API.
+- **Datenschutz, Editor-Feinschliff & Desktop-Zwischenablage (`US-024` / `T-068`, `T-069` & `B-002`):**
+  - Verzicht auf statische Betreiber-Pflichtangaben im DSGVO-Dialog (`PrivacyDialog`), Umstellung auf Non-Passive Wheel-Zoom-Listener (`T-069`) sowie Behebung von `B-002` (präfixloses Desktop-XML mit eingebettetem Base64-Web-JSON für durchgängiges Copy/Paste zwischen Logic Circuit Web und LogicCircuit Desktop `2.26.9.1`).
+
+---
+
+## Release 1.0.0 – Vollständiger Desktop-Port & Web-Plattform
+
+### Projekt-Setup, Schematics-Canvas & Raster-Navigation (`US-001`, `US-002`)
 
 - **Projekt-Setup & Toolchain (`US-001` / `T-001`):**
   - Initialisierung der Webanwendung mit TypeScript, React, Vite, Emotion (`@emotion/styled`) und Vitest.
@@ -107,7 +131,7 @@ Dieses Dokument fasst sämtliche bis zum Abschluss von **Version 1.0.0** umgeset
 - **Mehrsprachigkeit Deutsch & Englisch (`US-022` / `T-062`, `T-063`):**
   - Vollständige Lokalisierung aller Menüs, Dialoge, Komponenten-Kategorien, Tooltips, Statusanzeigen und Fehlermeldungen über `i18next` / `react-i18next` mit automatischer Browser-Spracherkennung, Schnell-Umschalter in der Statusleiste und Paritäts-Unit-Tests (`i18nParity.test.ts`).
 - **Release 1.0 Abschluss, GitHub Pages & Branch-Strategie (`US-023` / `T-064`, `T-065`, `T-066`):**
-  - Konsolidierung der 1.0-Chronik in `docs/history-1.0.md` und Bereinigung der Einzeldateien.
+  - Konsolidierung der 1.0-Chronik in `docs/history.md` und Bereinigung der Einzeldateien.
   - Zweisprachige globale Projektvorstellung (`README.md` & `README.de.md`), `package.json`-Release-Metadaten (`1.0.0`, `MIT`), MCP-freier Build-Modus (`VITE_DISABLE_MCP=true` / `yarn build:pages`) und automatisiertes GitHub-Pages-Deployment per GitHub Actions (`.github/workflows/deploy-pages.yml`).
   - Sauberer Release-1.0-Commit auf `stable`, Abzweigen des Release-Branches `1.0` und Neustart von `develop` auf Stand `1.0.0`.
 

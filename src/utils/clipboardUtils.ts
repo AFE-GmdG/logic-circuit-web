@@ -60,9 +60,50 @@ export function isCircuitClipboardXml(text: string | null | undefined): boolean 
   return trimmed.includes("<CircuitProject") || trimmed.includes("<lc:CircuitProject");
 }
 
-// Prüft, ob ein String ein gültiges natives Web-JSON-Snippet enthält
+const LCWEB_NATIVE_B64_PREFIX = "<!--LCWEB_NATIVE_B64:";
+const LCWEB_NATIVE_B64_SUFFIX = "-->";
+const LCWEB_NATIVE_B64_COMMENT_REGEX = /<!--LCWEB_NATIVE_B64:([A-Za-z0-9+/=]+)-->/;
+
+function encodeUtf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function decodeBase64ToUtf8(base64: string): string {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+// Extrahiert und dekodiert einen eingebetteten Base64-Web-JSON-Kommentar aus einem XML-Snippet
+export function extractEmbeddedNativeJson(rawText: string | null | undefined): string | null {
+  if (!rawText) {
+    return null;
+  }
+  const match = rawText.match(LCWEB_NATIVE_B64_COMMENT_REGEX);
+  if (!match) {
+    return null;
+  }
+  try {
+    const decoded = decodeBase64ToUtf8(match[1]);
+    return isNativeCircuitJson(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+// Prüft, ob ein String ein gültiges natives Web-JSON-Snippet (direkt oder als XML-Kommentar eingebettet) enthält
 export function isCircuitClipboardNative(text: string | null | undefined): boolean {
-  return isNativeCircuitJson(text);
+  return isNativeCircuitJson(text) || extractEmbeddedNativeJson(text) !== null;
 }
 
 // Prüft, ob ein Zwischenablage-Text entweder als natives Web-JSON oder als Desktop-XML einfügbar ist
@@ -92,7 +133,7 @@ export function buildClipboardNativeJson(
   return serializeNativeSelection(project, circuit, symbolIds, wireIds, textNoteIds);
 }
 
-// Standard-Clipboard-Serialisierung der WebApp (natives Web-JSON-Snippet)
+// Standard-Clipboard-Serialisierung der WebApp (Desktop-XML mit eingebettetem Base64-Web-JSON-Kommentar)
 export function buildClipboardContent(
   project: CircuitProject,
   circuit: LogicalCircuit,
@@ -100,7 +141,16 @@ export function buildClipboardContent(
   wireIds: string[],
   textNoteIds: string[],
 ): string {
-  return buildClipboardNativeJson(project, circuit, symbolIds, wireIds, textNoteIds);
+  const xml = buildClipboardXml(project, circuit, symbolIds, wireIds, textNoteIds);
+  const nativeJson = buildClipboardNativeJson(project, circuit, symbolIds, wireIds, textNoteIds);
+  const encodedNative = encodeUtf8ToBase64(nativeJson);
+  const commentLine = `\t${LCWEB_NATIVE_B64_PREFIX}${encodedNative}${LCWEB_NATIVE_B64_SUFFIX}`;
+  const closingTag = "</CircuitProject>";
+  const closingIndex = xml.lastIndexOf(closingTag);
+  if (closingIndex !== -1) {
+    return `${xml.slice(0, closingIndex)}${commentLine}\n${xml.slice(closingIndex)}`;
+  }
+  return `${xml}\n${commentLine}`;
 }
 
 // Synchroner Fallback über ein temporäres Textarea-Element für zuverlässiges OS-Clipboard-Schreiben
@@ -314,15 +364,18 @@ function cloneIndividualCircuit(circuit: Circuit): Circuit {
   }
 }
 
-// Bereitet ein Zwischenablage-Snippet (natives JSON oder Desktop-XML) für den schwebenden Paste-Vorgang auf
+// Bereitet ein Zwischenablage-Snippet (natives JSON, eingebetteter Base64-Kommentar oder Desktop-XML) für den Paste-Vorgang auf
 export function prepareClipboardPaste(
   rawText: string,
   targetProject: CircuitProject,
   targetCircuitId: string,
 ): PreparedPastePayload {
-  const snippet = isCircuitClipboardNative(rawText)
-    ? parseNativeSnippet(rawText)
-    : parseLogicCircuitSnippetXml(rawText);
+  const embeddedNative = extractEmbeddedNativeJson(rawText);
+  const snippet = embeddedNative !== null
+    ? parseNativeSnippet(embeddedNative)
+    : isNativeCircuitJson(rawText)
+      ? parseNativeSnippet(rawText)
+      : parseLogicCircuitSnippetXml(rawText);
   const sourceRoot =
     snippet.logicalCircuits.find((lc) => lc.logicalCircuitId === snippet.project.logicalCircuitId) ??
     snippet.logicalCircuits[0];

@@ -7,6 +7,7 @@ import CanvasContext from "../../contexts/canvasContext";
 import CircuitContext from "../../contexts/circuitContext";
 import SimulationContext from "../../contexts/simulationContext";
 
+import { isTestable } from "../../simulation/truthTable/circuitTestSocket";
 import { getCircuitDeletionBlockReason } from "../../utils/circuitManagement";
 import {
   getDefaultDirectoryHandle,
@@ -36,12 +37,17 @@ import {
 
 import PropertyDialog from "../propertyDialog";
 import ConfirmDialog from "./confirmDialog";
+import ExportHdlDialog from "./exportHdlDialog";
 import ExportImageDialog from "./exportImageDialog";
 import HelpDialog from "./helpDialog";
 import MainMenu from "./mainMenu";
 import OptionsDialog from "./optionsDialog";
+import OscilloscopeDialog from "./oscilloscopeDialog";
 import PrivacyDialog from "./privacyDialog";
 import ProjectDialog from "./projectDialog";
+import ReportDialog from "./reportDialog";
+import TruthTableDialog from "./truthTableDialog";
+import UsageDialog from "./usageDialog";
 
 type AppHeaderProps = React.ComponentPropsWithoutRef<"header">;
 
@@ -62,10 +68,15 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   const [isEditingCircuit, setIsEditingCircuit] = React.useState(false);
   const [isCreatingCircuit, setIsCreatingCircuit] = React.useState(false);
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = React.useState(false);
+  const [isExportHdlOpen, setIsExportHdlOpen] = React.useState(false);
   const [isExportImageOpen, setIsExportImageOpen] = React.useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = React.useState(false);
   const [isPrivacyOpen, setIsPrivacyOpen] = React.useState(false);
   const [isHelpOpen, setIsHelpOpen] = React.useState(false);
+  const [isUsageOpen, setIsUsageOpen] = React.useState(false);
+  const [isReportOpen, setIsReportOpen] = React.useState(false);
+  const [isTruthTableOpen, setIsTruthTableOpen] = React.useState(false);
+  const [isOscilloscopeOpen, setIsOscilloscopeOpen] = React.useState(false);
   const [confirmKind, setConfirmKind] = React.useState<
     "new-project" | "demo-project" | "import-project" | "delete-circuit" | null
   >(null);
@@ -74,7 +85,7 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const hamburgerButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
-  // Schließt Bearbeitungsdialoge und offenes Menü beim Start der Simulation (Bildexport bleibt verfügbar)
+  // Schließt Bearbeitungsdialoge und offenes Menü beim Start sowie Oszilloskop beim Ende der Simulation
   React.useEffect(
     () => {
       if (isSimulating) {
@@ -82,6 +93,8 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         setIsCreatingCircuit(false);
         setIsProjectSettingsOpen(false);
         setIsMenuOpen(false);
+      } else {
+        setIsOscilloscopeOpen(false);
       }
     },
     [isSimulating],
@@ -95,6 +108,16 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   );
 
   const canDeleteCurrentCircuit = deleteCircuitDisabledReason === null;
+
+  const canOpenTruthTable = React.useMemo(
+    () => isTestable(currentCircuit, circuitContext?.project),
+    [circuitContext?.project, currentCircuit],
+  );
+
+  const canOpenOscilloscope = isSimulating && simulationContext.hasProbes;
+  const canExportHdl =
+    (currentCircuit?.circuitSymbols.length ?? 0) > 0 ||
+    (currentCircuit?.wires.length ?? 0) > 0;
 
   const handleOpenProjectFromSystem = React.useCallback(
     async () => {
@@ -440,6 +463,86 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
     [handleExportProject],
   );
 
+  // Globales Tastenkürzel Strg+T öffnet die Wahrheitstabelle für testbare Schaltungen im Editiermodus
+  React.useEffect(
+    () => {
+      const handleTruthTableKeyDown = (event: KeyboardEvent) => {
+        if (
+          !(event.ctrlKey || event.metaKey) ||
+          event.altKey ||
+          event.shiftKey ||
+          event.key.toLowerCase() !== "t"
+        ) {
+          return;
+        }
+        if (isSimulating || !canOpenTruthTable || isMenuOpen) {
+          return;
+        }
+        const target = event.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+        if (typeof document !== "undefined" && document.querySelector("[role='dialog']")) {
+          return;
+        }
+        event.preventDefault();
+        setIsTruthTableOpen(true);
+      };
+
+      window.addEventListener("keydown", handleTruthTableKeyDown);
+      return () => window.removeEventListener("keydown", handleTruthTableKeyDown);
+    },
+    [
+      canOpenTruthTable,
+      isMenuOpen,
+      isSimulating,
+    ],
+  );
+
+  // Globales Tastenkürzel Strg+O öffnet bzw. schließt das Oszilloskop im Simulationsmodus
+  React.useEffect(
+    () => {
+      const handleOscilloscopeKeyDown = (event: KeyboardEvent) => {
+        if (
+          !(event.ctrlKey || event.metaKey) ||
+          event.altKey ||
+          event.shiftKey ||
+          event.key.toLowerCase() !== "o"
+        ) {
+          return;
+        }
+        if (!canOpenOscilloscope || isMenuOpen) {
+          return;
+        }
+        const target = event.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+        if (typeof document !== "undefined" && document.querySelector("[role='dialog'][aria-modal='true']")) {
+          return;
+        }
+        event.preventDefault();
+        setIsOscilloscopeOpen((prev) => !prev);
+      };
+
+      window.addEventListener("keydown", handleOscilloscopeKeyDown);
+      return () => window.removeEventListener("keydown", handleOscilloscopeKeyDown);
+    },
+    [canOpenOscilloscope, isMenuOpen],
+  );
+
   const handleCircuitDoubleClick = React.useCallback(
     () => {
       if (!isSimulating && currentCircuit) {
@@ -659,6 +762,9 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         }
         canPaste={canvasContext?.hasClipboardContent ?? false}
         canDeleteCurrentCircuit={canDeleteCurrentCircuit}
+        canOpenTruthTable={canOpenTruthTable}
+        canOpenOscilloscope={canOpenOscilloscope}
+        canExportHdl={canExportHdl}
         deleteCircuitDisabledReason={deleteCircuitDisabledReason ?? undefined}
         onClose={() => setIsMenuOpen(false)}
         onNewProject={handleRequestNewProject}
@@ -667,6 +773,7 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         onSaveProject={handleExportProject}
         onSaveProjectAs={handleSaveProjectAs}
         onExportDesktopXml={handleRequestExportDesktopXml}
+        onExportHdl={() => setIsExportHdlOpen(true)}
         onExportImage={() => setIsExportImageOpen(true)}
         onOpenProjectSettings={() => {
           if (!isSimulating) {
@@ -725,6 +832,18 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         isCleanUpVisualizationEnabled={circuitContext?.isCleanUpVisualizationEnabled ?? false}
         onToggleCleanUpVisualization={() => circuitContext?.toggleCleanUpVisualization?.()}
         onOpenSearch={() => canvasContext?.openFindBar?.()}
+        onOpenTruthTable={() => {
+          if (canOpenTruthTable) {
+            setIsTruthTableOpen(true);
+          }
+        }}
+        onOpenOscilloscope={() => {
+          if (canOpenOscilloscope) {
+            setIsOscilloscopeOpen(true);
+          }
+        }}
+        onOpenUsage={() => setIsUsageOpen(true)}
+        onOpenReport={() => setIsReportOpen(true)}
         onOpenOptions={() => setIsOptionsOpen(true)}
         onOpenPrivacy={() => setIsPrivacyOpen(true)}
         onOpenHelp={() => setIsHelpOpen(true)}
@@ -809,6 +928,36 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
       <ProjectDialog
         isOpen={isProjectSettingsOpen}
         onClose={() => setIsProjectSettingsOpen(false)}
+      />
+
+      {/* Verwendungsnachweis-Dialog (DialogUsage) */}
+      <UsageDialog
+        isOpen={isUsageOpen}
+        onClose={() => setIsUsageOpen(false)}
+      />
+
+      {/* Schaltungsbericht-Dialog (DialogReport) */}
+      <ReportDialog
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+      />
+
+      {/* Wahrheitstabellen-Dialog (DialogTruthTable) */}
+      <TruthTableDialog
+        isOpen={isTruthTableOpen}
+        onClose={() => setIsTruthTableOpen(false)}
+      />
+
+      {/* Oszilloskop- & Timing-Diagramm-Dialog (DialogOscilloscope) */}
+      <OscilloscopeDialog
+        isOpen={isOscilloscopeOpen}
+        onClose={() => setIsOscilloscopeOpen(false)}
+      />
+
+      {/* HDL-Export-Dialog (Verilog, VHDL & Nand2Tetris) */}
+      <ExportHdlDialog
+        isOpen={isExportHdlOpen}
+        onClose={() => setIsExportHdlOpen(false)}
       />
 
       {/* Bildexport-Dialog (PNG 1:1 / SVG, auch während Simulation verfügbar) */}

@@ -334,8 +334,26 @@ describe("T-040: Hauptmenü, Schaltplanverwaltung & Hilfe-Dialog", () => {
     const fallbackHtml = renderToStaticMarkup(
       <PrivacyDialog isOpen={true} onClose={noop} />,
     );
-    expect(fallbackHtml).toContain("PRIVACY_RESPONSIBLE_NAME");
+    expect(fallbackHtml).not.toContain("PRIVACY_RESPONSIBLE_NAME");
+    expect(fallbackHtml).toContain("keine gesonderten Betreiberangaben");
     expect(fallbackHtml).toContain("Keine Cookies &amp; kein Tracking");
+
+    const prevDisableMcp = process.env.DISABLE_MCP;
+    process.env.DISABLE_MCP = "true";
+    try {
+      const staticPagesHtml = renderToStaticMarkup(
+        <PrivacyDialog isOpen={true} onClose={noop} />,
+      );
+      expect(staticPagesHtml).not.toContain("PRIVACY_RESPONSIBLE_NAME");
+      expect(staticPagesHtml).not.toContain("Remote-MCP (Opt-in)");
+      expect(staticPagesHtml).toContain("Statische Bereitstellung");
+    } finally {
+      if (prevDisableMcp === undefined) {
+        delete process.env.DISABLE_MCP;
+      } else {
+        process.env.DISABLE_MCP = prevDisableMcp;
+      }
+    }
   });
 
   it("rendert ConfirmDialog für destruktive Bestätigungen", () => {

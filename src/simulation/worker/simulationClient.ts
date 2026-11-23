@@ -1,6 +1,10 @@
 import type LogicalCircuit from "../../types/circuit/logicalCircuit";
 import type FrameRateLimit from "../../types/simulation/frameRateLimit";
 import type GraphicsArraySnapshot from "../../types/simulation/graphicsArraySnapshot";
+import type {
+  OscilloscopeSnapshot,
+  ProbeHistorySnapshot,
+} from "../../types/simulation/oscilloscope";
 import type SimulationErrorLocation from "../../types/simulation/simulationErrorLocation";
 
 import CircuitRunner from "./circuitRunner";
@@ -156,6 +160,56 @@ class InProcessWorker implements Worker {
           });
           break;
         }
+
+        case "READ_PROBE_HISTORY": {
+          const history = this.#runner ? this.#runner.readProbeHistory(message.probeId) : null;
+          this.#emit({
+            type: "PROBE_HISTORY",
+            requestId: message.requestId,
+            history,
+          });
+          break;
+        }
+
+        case "MARK_PROBE_HISTORY": {
+          const history = this.#runner ? this.#runner.markProbeHistory(message.probeId) : null;
+          this.#emit({
+            type: "PROBE_HISTORY",
+            requestId: message.requestId,
+            history,
+          });
+          break;
+        }
+
+        case "SET_OSCILLOSCOPING": {
+          const data = this.#runner ? this.#runner.setOscilloscoping(message.enabled) : null;
+          this.#emit({
+            type: "OSCILLOSCOPE_DATA",
+            requestId: message.requestId,
+            data,
+          });
+          break;
+        }
+
+        case "READ_OSCILLOSCOPE": {
+          const data = this.#runner ? this.#runner.readOscilloscope() : null;
+          this.#emit({
+            type: "OSCILLOSCOPE_DATA",
+            requestId: message.requestId,
+            data,
+          });
+          break;
+        }
+
+        case "CLEAR_OSCILLOSCOPE": {
+          const data = this.#runner ? this.#runner.clearOscilloscope() : null;
+          this.#emit({
+            type: "OSCILLOSCOPE_DATA",
+            requestId: message.requestId,
+            data,
+          });
+          break;
+        }
       }
     } catch (err) {
       const e = err as Error;
@@ -213,6 +267,8 @@ export class SimulationClient {
     number,
     (res: { success: boolean; revision: number; snapshot?: SimulationSnapshot }) => void
   > = new Map();
+  #probeHistoryResolvers: Map<number, (history: ProbeHistorySnapshot | null) => void> = new Map();
+  #oscilloscopeResolvers: Map<number, (data: OscilloscopeSnapshot | null) => void> = new Map();
   readonly #graphicsVramCache = new Map<string, Uint8Array>();
 
   constructor(customWorker?: Worker) {
@@ -326,6 +382,69 @@ export class SimulationClient {
     });
   }
 
+  // Liest den Wertänderungsverlauf einer Messsonde aus dem Worker
+  readProbeHistory(probeId: string): Promise<ProbeHistorySnapshot | null> {
+    return new Promise((resolve) => {
+      const requestId = this.#nextRequestId++;
+      this.#probeHistoryResolvers.set(requestId, resolve);
+      this.#postCommand({
+        type: "READ_PROBE_HISTORY",
+        requestId,
+        probeId,
+      });
+    });
+  }
+
+  // Fügt eine visuelle Markierung in den Sondenverlauf ein
+  markProbeHistory(probeId: string): Promise<ProbeHistorySnapshot | null> {
+    return new Promise((resolve) => {
+      const requestId = this.#nextRequestId++;
+      this.#probeHistoryResolvers.set(requestId, resolve);
+      this.#postCommand({
+        type: "MARK_PROBE_HISTORY",
+        requestId,
+        probeId,
+      });
+    });
+  }
+
+  // Aktiviert oder pausiert die Oszilloskop-Signalaufzeichnung im Worker
+  setOscilloscoping(enabled: boolean): Promise<OscilloscopeSnapshot | null> {
+    return new Promise((resolve) => {
+      const requestId = this.#nextRequestId++;
+      this.#oscilloscopeResolvers.set(requestId, resolve);
+      this.#postCommand({
+        type: "SET_OSCILLOSCOPING",
+        requestId,
+        enabled,
+      });
+    });
+  }
+
+  // Liest die aktuellen Oszilloskop-Daten aller Sonden aus dem Worker
+  readOscilloscope(): Promise<OscilloscopeSnapshot | null> {
+    return new Promise((resolve) => {
+      const requestId = this.#nextRequestId++;
+      this.#oscilloscopeResolvers.set(requestId, resolve);
+      this.#postCommand({
+        type: "READ_OSCILLOSCOPE",
+        requestId,
+      });
+    });
+  }
+
+  // Leert alle Oszilloskop-Ringpuffer im Worker
+  clearOscilloscope(): Promise<OscilloscopeSnapshot | null> {
+    return new Promise((resolve) => {
+      const requestId = this.#nextRequestId++;
+      this.#oscilloscopeResolvers.set(requestId, resolve);
+      this.#postCommand({
+        type: "CLEAR_OSCILLOSCOPE",
+        requestId,
+      });
+    });
+  }
+
   // Passt die Simulationsgeschwindigkeit / Framerate an
   setSpeed(frameRateLimit: FrameRateLimit): void {
     this.#postCommand({
@@ -406,6 +525,14 @@ export class SimulationClient {
       resolve({ success: false, revision: 0 });
     }
     this.#memoryWriteResolvers.clear();
+    for (const resolve of this.#probeHistoryResolvers.values()) {
+      resolve(null);
+    }
+    this.#probeHistoryResolvers.clear();
+    for (const resolve of this.#oscilloscopeResolvers.values()) {
+      resolve(null);
+    }
+    this.#oscilloscopeResolvers.clear();
   }
 
   // Beendet den Worker und gibt alle Ressourcen frei
@@ -553,6 +680,24 @@ export class SimulationClient {
             revision: message.revision,
             snapshot: message.snapshot ? this.#hydrateGraphicsVram(message.snapshot) : undefined,
           });
+        }
+        break;
+      }
+
+      case "PROBE_HISTORY": {
+        const resolve = this.#probeHistoryResolvers.get(message.requestId);
+        if (resolve) {
+          this.#probeHistoryResolvers.delete(message.requestId);
+          resolve(message.history);
+        }
+        break;
+      }
+
+      case "OSCILLOSCOPE_DATA": {
+        const resolve = this.#oscilloscopeResolvers.get(message.requestId);
+        if (resolve) {
+          this.#oscilloscopeResolvers.delete(message.requestId);
+          resolve(message.data);
         }
         break;
       }

@@ -8,6 +8,7 @@ import SimulationContext from "../../contexts/simulationContext";
 
 import type Circuit from "../../types/circuit/circuit";
 import type CircuitButton from "../../types/circuit/circuitButton";
+import type CircuitProbe from "../../types/circuit/circuitProbe";
 import type CircuitShape from "../../types/circuit/circuitShape";
 import type CircuitSymbol from "../../types/circuit/circuitSymbol";
 import type Constant from "../../types/circuit/constant";
@@ -32,6 +33,7 @@ import {
   getButtonInstanceId,
   getCircuitMapSymbolChain,
   getGraphicsArrayInstanceId,
+  getProbeInstanceId,
 } from "../../simulation/compiler/circuitMap";
 import { formatSensorValueText, parseHexUint } from "../../simulation/functions/io/functionSensor";
 import type { SimulationSnapshot } from "../../simulation/worker/workerMessages";
@@ -205,6 +207,7 @@ function resolveSymbolRenderState(
   targetCircuitMap: CircuitMap | null | undefined,
   buttonInstancePath?: string,
   graphicsInstancePath?: string,
+  probeInstancePath?: string,
 ): SymbolRenderState {
   let displayValue: string | undefined;
   if (targetSymbol.circuit.kind === "constant") {
@@ -217,7 +220,10 @@ function resolveSymbolRenderState(
       displayValue = String(c.value ?? 0);
     }
   } else if (targetSymbol.circuit.kind === "circuitProbe") {
-    const probeSnap = snapshot?.probes[targetSymbol.circuit.circuitId];
+    const probe = targetSymbol.circuit as Partial<CircuitProbe>;
+    const rawProbeId = probe.circuitProbeId ?? targetSymbol.circuit.circuitId;
+    const instanceKey = probeInstancePath ?? getProbeInstanceId(targetCircuitMap, targetSymbol);
+    const probeSnap = snapshot?.probes[instanceKey] ?? snapshot?.probes[rawProbeId];
     if (isSimulating && probeSnap) {
       displayValue = probeSnap.text;
     } else {
@@ -459,6 +465,17 @@ function renderEmbeddedDisplayElements(
         ? `${instanceSymbolChain.join("/")}/${childSym.circuitSymbolId}`
         : childSym.circuitSymbolId)
       : undefined;
+    const embeddedProbe = childSym.circuit.kind === "circuitProbe"
+      ? (childSym.circuit as Partial<CircuitProbe>)
+      : null;
+    const rawEmbeddedProbeId = embeddedProbe
+      ? (embeddedProbe.circuitProbeId ?? childSym.circuit.circuitId)
+      : undefined;
+    const embeddedProbePath = rawEmbeddedProbeId
+      ? (instanceSymbolChain.length > 0
+        ? `${instanceSymbolChain.join("/")}/${rawEmbeddedProbeId}`
+        : rawEmbeddedProbeId)
+      : undefined;
     const childState = resolveSymbolRenderState(
       childSym,
       childGateInfo,
@@ -467,6 +484,7 @@ function renderEmbeddedDisplayElements(
       targetCircuitMap,
       displayButtonPath,
       embeddedGraphicsPath,
+      embeddedProbePath,
     );
 
     return (

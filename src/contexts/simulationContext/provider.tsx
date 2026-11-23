@@ -8,6 +8,10 @@ import type SynthesizerMode from "../../types/circuit/synthesizerMode";
 import type Wire from "../../types/circuit/wire";
 import type CircuitCleanUpReport from "../../types/simulation/circuitCleanUpReport";
 import type FrameRateLimit from "../../types/simulation/frameRateLimit";
+import type {
+  OscilloscopeSnapshot,
+  ProbeHistorySnapshot,
+} from "../../types/simulation/oscilloscope";
 import type SimulationError from "../../types/simulation/simulationError";
 import type SimulationErrorLocation from "../../types/simulation/simulationErrorLocation";
 import type State from "../../types/simulation/state";
@@ -143,6 +147,14 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
   const [isPaused, setIsPaused] = React.useState(false);
   const isPausedRef = React.useRef(false);
   isPausedRef.current = isPaused;
+
+  const [hasProbes, setHasProbes] = React.useState(false);
+  const hasProbesRef = React.useRef(false);
+  hasProbesRef.current = hasProbes;
+
+  const [isOscilloscoping, setIsOscilloscoping] = React.useState(false);
+  const isOscilloscopingRef = React.useRef(false);
+  isOscilloscopingRef.current = isOscilloscoping;
 
   const [frameRateLimit, setFrameRateLimit] = React.useState<FrameRateLimit>(30);
   const frameRateLimitRef = React.useRef<FrameRateLimit>(30);
@@ -292,6 +304,10 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       setIsSimulating(false);
       isPausedRef.current = false;
       setIsPaused(false);
+      hasProbesRef.current = false;
+      setHasProbes(false);
+      isOscilloscopingRef.current = false;
+      setIsOscilloscoping(false);
       isOscillatingRef.current = false;
       setIsOscillating(false);
       oscillationLocationRef.current = null;
@@ -512,6 +528,13 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
             totalStepsRef.current = snap.telemetry.totalSteps;
             setTotalSteps(snap.telemetry.totalSteps);
           }
+          if (
+            snap.telemetry.isOscilloscoping !== undefined &&
+            snap.telemetry.isOscilloscoping !== isOscilloscopingRef.current
+          ) {
+            isOscilloscopingRef.current = snap.telemetry.isOscilloscoping;
+            setIsOscilloscoping(snap.telemetry.isOscilloscoping);
+          }
 
           if (snap.telemetry.isOscillating) {
             handleWorkerStatusOscillation(snap.telemetry.oscillationLocation);
@@ -560,6 +583,13 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       if (snap.telemetry.totalSteps !== totalStepsRef.current) {
         totalStepsRef.current = snap.telemetry.totalSteps;
         setTotalSteps(snap.telemetry.totalSteps);
+      }
+      if (
+        snap.telemetry.isOscilloscoping !== undefined &&
+        snap.telemetry.isOscilloscoping !== isOscilloscopingRef.current
+      ) {
+        isOscilloscopingRef.current = snap.telemetry.isOscilloscoping;
+        setIsOscilloscoping(snap.telemetry.isOscilloscoping);
       }
       if (snap.telemetry.isOscillating) {
         handleWorkerStatusOscillation(snap.telemetry.oscillationLocation);
@@ -617,12 +647,16 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       try {
         const map = new CircuitMap(effectiveRoot);
         map.apply();
-        await client.init(effectiveRoot);
+        const ready = await client.init(effectiveRoot);
 
         isSimulatingRef.current = true;
         setIsSimulating(true);
         isPausedRef.current = paused;
         setIsPaused(paused);
+        hasProbesRef.current = ready.probeCount > 0;
+        setHasProbes(ready.probeCount > 0);
+        isOscilloscopingRef.current = false;
+        setIsOscilloscoping(false);
         isOscillatingRef.current = false;
         setIsOscillating(false);
         oscillationLocationRef.current = null;
@@ -901,6 +935,91 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
     [applySnapshotUpdate],
   );
 
+  // Aktiviert oder pausiert die Oszilloskop-Aufzeichnung im WebWorker
+  const setOscilloscoping = React.useCallback(
+    async (enabled: boolean): Promise<OscilloscopeSnapshot | null> => {
+      if (!clientRef.current || !isSimulatingRef.current) {
+        return null;
+      }
+      try {
+        const data = await clientRef.current.setOscilloscoping(enabled);
+        if (data && isSimulatingRef.current) {
+          isOscilloscopingRef.current = data.isOscilloscoping;
+          setIsOscilloscoping(data.isOscilloscoping);
+        }
+        return data;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // Liest alle Oszilloskop-Spuren aus dem WebWorker
+  const readOscilloscope = React.useCallback(
+    async (): Promise<OscilloscopeSnapshot | null> => {
+      if (!clientRef.current || !isSimulatingRef.current) {
+        return null;
+      }
+      try {
+        const data = await clientRef.current.readOscilloscope();
+        if (data && isSimulatingRef.current && data.isOscilloscoping !== isOscilloscopingRef.current) {
+          isOscilloscopingRef.current = data.isOscilloscoping;
+          setIsOscilloscoping(data.isOscilloscoping);
+        }
+        return data;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // Leert alle Oszilloskop-Spuren im WebWorker
+  const clearOscilloscope = React.useCallback(
+    async (): Promise<OscilloscopeSnapshot | null> => {
+      if (!clientRef.current || !isSimulatingRef.current) {
+        return null;
+      }
+      try {
+        return await clientRef.current.clearOscilloscope();
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // Liest den Wertänderungsverlauf einer einzelnen Messsonde aus dem WebWorker
+  const readProbeHistory = React.useCallback(
+    async (probeId: string): Promise<ProbeHistorySnapshot | null> => {
+      if (!clientRef.current || !isSimulatingRef.current) {
+        return null;
+      }
+      try {
+        return await clientRef.current.readProbeHistory(probeId);
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // Fügt eine visuelle Trennmarkierung in den Verlauf einer Messsonde ein
+  const markProbeHistory = React.useCallback(
+    async (probeId: string): Promise<ProbeHistorySnapshot | null> => {
+      if (!clientRef.current || !isSimulatingRef.current) {
+        return null;
+      }
+      try {
+        return await clientRef.current.markProbeHistory(probeId);
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
   // Synchronisiert die Ziel-Taktfrequenz mit den Projekteinstellungen (Frequenz / Max-Speed)
   const projectFrequency = circuitContext?.project?.project?.frequency;
   const projectIsMaxSpeed = circuitContext?.project?.project?.isMaximumSpeed;
@@ -1149,6 +1268,12 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
         get isRunning() {
           return isSimulatingRef.current && !isPausedRef.current;
         },
+        get hasProbes() {
+          return hasProbesRef.current;
+        },
+        get isOscilloscoping() {
+          return isOscilloscopingRef.current;
+        },
         get frameRateLimit() {
           return frameRateLimitRef.current;
         },
@@ -1163,6 +1288,11 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
         flushPersistentMemories,
         readMemorySlice,
         writeMemoryCell,
+        setOscilloscoping,
+        readOscilloscope,
+        clearOscilloscope,
+        readProbeHistory,
+        markProbeHistory,
         get snapshot() {
           return snapshotRef.current;
         },

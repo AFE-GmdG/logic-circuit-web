@@ -1684,6 +1684,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       const finalExportToHDL = updates.exportToHDL !== undefined
         ? updates.exportToHDL
         : currentLc.exportToHDL;
+      const finalValidators = updates.validators !== undefined
+        ? updates.validators
+        : currentLc.validators;
+      const hasValidatorsChange =
+        updates.validators !== undefined && currentLc.validators !== updates.validators;
 
       let beforePinOrder: { pinId: string; index: number }[] | undefined;
       let afterPinOrder: { pinId: string; index: number }[] | undefined;
@@ -1758,6 +1763,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           showLabelAbove: currentShowLabelAbove,
           displayMargin: currentDisplayMargin,
           exportToHDL: currentLc.exportToHDL,
+          validators: currentLc.validators,
           ...(beforePinOrder ? { pinOrder: beforePinOrder } : {}),
         },
         afterLogicalCircuit: {
@@ -1769,9 +1775,14 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           showLabelAbove: finalShowLabelAbove,
           displayMargin: finalDisplayMargin,
           exportToHDL: finalExportToHDL,
+          validators: finalValidators,
           ...(afterPinOrder ? { pinOrder: afterPinOrder } : {}),
         },
       };
+
+      if (Object.keys(changes).length === 0 && !hasValidatorsChange) {
+        return currentLc;
+      }
 
       let updatedLc: LogicalCircuit | null = null;
       setProject((prevProject) => {

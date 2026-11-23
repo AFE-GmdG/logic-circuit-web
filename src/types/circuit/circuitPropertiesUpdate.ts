@@ -12,6 +12,7 @@ type CircuitPropertiesUpdate = {
   showLabelAbove?: boolean;
   displayMargin?: DisplayMargin;
   exportToHDL?: boolean;
+  validators?: string;
   pinOrder?: { pinId: string; index: number }[];
 };
 

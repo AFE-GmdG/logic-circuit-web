@@ -23,6 +23,7 @@ import {
   buildClipboardNativeJson,
   buildClipboardXml,
   clearInMemoryClipboardText,
+  extractEmbeddedNativeJson,
   getInMemoryClipboardText,
   isCircuitClipboardNative,
   isCircuitClipboardText,
@@ -41,6 +42,7 @@ import {
   LOGIC_CIRCUIT_CURRENT_NAMESPACE,
   LOGIC_CIRCUIT_DESKTOP_NAMESPACE,
 } from "../utils/xml/logicCircuitXmlConstants";
+import { parseLogicCircuitSnippetXml } from "../utils/xml/logicCircuitXmlReader";
 
 import MainMenu from "../components/app/mainMenu";
 import FloatingPasteLayer from "../components/circuitCanvas/floatingPasteLayer";
@@ -463,11 +465,13 @@ describe("T-043: Schwebender Paste-Zustand (Floating Paste) und Bearbeiten-Menü
       [],
     );
 
-    expect(xml).toContain(`xmlns:lc="${LOGIC_CIRCUIT_CURRENT_NAMESPACE}"`);
+    expect(xml).toContain(`xmlns="${LOGIC_CIRCUIT_CURRENT_NAMESPACE}"`);
+    expect(xml).not.toContain("xmlns:lc=");
+    expect(xml).not.toContain("<lc:");
     expect(xml).toContain("CellShape=\"Rectangle\"");
     expect(xml).not.toContain("CellShape=\"Rect\"");
     expect(xml).not.toContain(probeEntityId);
-    expect(xml).toMatch(/<lc:CircuitProbe CircuitProbeId="([0-9a-f-]+)" Name="\1"/i);
+    expect(xml).toMatch(/<CircuitProbe CircuitProbeId="([0-9a-f-]+)" Name="\1"/i);
 
     const wroteSystemClipboard = await writeClipboardText(xml);
     expect(typeof wroteSystemClipboard).toBe("boolean");
@@ -535,7 +539,7 @@ describe("T-059: Natives JSON-Clipboard (Web-to-Web verlustfrei inkl. Desktop-XM
         { type: "subCircuit", subCircuitId: subId, name: "DispSub" },
         { x: 16, y: 2 },
       );
-      const note = ctx.addTextNote("Notiz A\nZeile B", { x: 2, y: 14 });
+      const note = ctx.addTextNote("Notiz A --> B\nZeile B", { x: 2, y: 14 });
       ctx.updateTextNote(note.textNoteId, { fontFamily: "sans", lineHeights: [36, 12] });
 
       pinOutSymId = pinSym.circuitSymbolId;
@@ -546,7 +550,14 @@ describe("T-059: Natives JSON-Clipboard (Web-to-Web verlustfrei inkl. Desktop-XM
       noteId = note.textNoteId;
     });
 
-    const nativeJson = buildClipboardContent(
+    const dualContent = buildClipboardContent(
+      ctx.project,
+      ctx.currentCircuit,
+      [pinOutSymId, probeSymId, btnSymId, ledSymId, subSymId],
+      [],
+      [noteId],
+    );
+    const pureNativeJson = buildClipboardNativeJson(
       ctx.project,
       ctx.currentCircuit,
       [pinOutSymId, probeSymId, btnSymId, ledSymId, subSymId],
@@ -554,23 +565,33 @@ describe("T-059: Natives JSON-Clipboard (Web-to-Web verlustfrei inkl. Desktop-XM
       [noteId],
     );
 
-    expect(nativeJson).toBe(
-      buildClipboardNativeJson(
-        ctx.project,
-        ctx.currentCircuit,
-        [pinOutSymId, probeSymId, btnSymId, ledSymId, subSymId],
-        [],
-        [noteId],
-      ),
-    );
-    expect(isCircuitClipboardNative(nativeJson)).toBe(true);
-    expect(isCircuitClipboardText(nativeJson)).toBe(true);
-    expect(isCircuitClipboardXml(nativeJson)).toBe(false);
+    // Dual-Format kombiniert präfixloses Desktop-XML mit Base64-kodiertem nativem JSON-Kommentar (ohne vorzeitiges "-->")
+    expect(dualContent).toContain(`<CircuitProject xmlns="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}">`);
+    expect(dualContent).not.toContain("xmlns:lc=");
+    expect(dualContent).not.toContain("<lc:");
+    expect(dualContent).toContain("Notation=\"Main\"");
+    expect(dualContent).toMatch(/<!--LCWEB_NATIVE_B64:[A-Za-z0-9+/=]+-->/);
+    expect(dualContent.match(/-->/g)).toHaveLength(1);
+    expect(extractEmbeddedNativeJson(dualContent)).toBe(pureNativeJson);
 
-    // Einfügen in eine leere Zielschaltung eines zweiten Projekts prüft Subschaltungs-Transfer & Web-Felder
+    expect(isCircuitClipboardNative(dualContent)).toBe(true);
+    expect(isCircuitClipboardXml(dualContent)).toBe(true);
+    expect(isCircuitClipboardText(dualContent)).toBe(true);
+
+    expect(isCircuitClipboardNative(pureNativeJson)).toBe(true);
+    expect(isCircuitClipboardText(pureNativeJson)).toBe(true);
+    expect(isCircuitClipboardXml(pureNativeJson)).toBe(false);
+
+    // Desktop-XML-Parser (ignoriert Kommentare) parst den XML-Teil inkl. maskiertem "-->" in der TextNote fehlerfrei
+    const parsedAsDesktopXml = parseLogicCircuitSnippetXml(dualContent);
+    expect(parsedAsDesktopXml.textNotes[0]?.note).toBe("Notiz A --> B\nZeile B");
+
+    // Einfügen in eine leere Zielschaltung eines zweiten Projekts stellt alle Web-Erweiterungen über Base64-JSON wieder her
     const targetProject = createEmptyCircuitProject("Target", "Main");
     const targetCircuitId = targetProject.logicalCircuits[0]!.logicalCircuitId;
-    const payload = prepareClipboardPaste(nativeJson, targetProject, targetCircuitId);
+    const payload = prepareClipboardPaste(dualContent, targetProject, targetCircuitId);
+    const pureNativePayload = prepareClipboardPaste(pureNativeJson, targetProject, targetCircuitId);
+    expect(pureNativePayload.symbols).toHaveLength(payload.symbols.length);
 
     const pastedPin = payload.symbols.find((s) => s.circuit.kind === "pin");
     expect(pastedPin?.pin?.pinType).toBe("output");
@@ -591,10 +612,11 @@ describe("T-059: Natives JSON-Clipboard (Web-to-Web verlustfrei inkl. Desktop-XM
     expect(pastedSub.showLabelAbove).toBe(true);
     expect(pastedSub.displayMargin).toBe("all");
 
+    expect(payload.textNotes[0]?.note).toBe("Notiz A --> B\nZeile B");
     expect(payload.textNotes[0]?.fontFamily).toBe("sans");
     expect(payload.textNotes[0]?.lineHeights).toEqual([36, 12]);
 
-    // Dedizierter Desktop-XML-Clipboard-Export (B-002 / T-060) nutzt Schema 2.0.0.14, nur GUIDs und streift Web-Attribute ab
+    // Dedizierter Desktop-XML-Clipboard-Export (B-002 / T-060) nutzt Schema 2.0.0.14 ohne lc:-Präfix, nur GUIDs und streift Web-Attribute ab
     const desktopXml = buildClipboardXml(
       ctx.project,
       ctx.currentCircuit,
@@ -602,7 +624,10 @@ describe("T-059: Natives JSON-Clipboard (Web-to-Web verlustfrei inkl. Desktop-XM
       [],
       [noteId],
     );
-    expect(desktopXml).toContain(`xmlns:lc="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
+    expect(desktopXml).toContain(`xmlns="${LOGIC_CIRCUIT_DESKTOP_NAMESPACE}"`);
+    expect(desktopXml).not.toContain("xmlns:lc=");
+    expect(desktopXml).not.toContain("<lc:");
+    expect(desktopXml).not.toContain("LCWEB_NATIVE_B64");
     expect(desktopXml).not.toContain("2.0.0.15");
     expect(desktopXml).not.toContain("Color=");
     expect(desktopXml).not.toContain("ShowLabelAbove=");

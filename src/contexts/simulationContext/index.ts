@@ -5,6 +5,10 @@ import type SynthesizerMode from "../../types/circuit/synthesizerMode";
 import type Wire from "../../types/circuit/wire";
 import type CircuitCleanUpReport from "../../types/simulation/circuitCleanUpReport";
 import type FrameRateLimit from "../../types/simulation/frameRateLimit";
+import type {
+  OscilloscopeSnapshot,
+  ProbeHistorySnapshot,
+} from "../../types/simulation/oscilloscope";
 import type SimulationError from "../../types/simulation/simulationError";
 import type SimulationErrorLocation from "../../types/simulation/simulationErrorLocation";
 import type State from "../../types/simulation/state";
@@ -27,6 +31,8 @@ export type SimulationContextType = {
   isSimulating: boolean;
   isPaused: boolean;
   isRunning: boolean;
+  hasProbes: boolean;
+  isOscilloscoping: boolean;
   frameRateLimit: FrameRateLimit;
   setFrameRateLimit: (limit: FrameRateLimit) => void;
   startSimulation: (targetCircuit?: LogicalCircuit) => Promise<SimulationSnapshot | null>;
@@ -50,6 +56,11 @@ export type SimulationContextType = {
     count: number,
   ) => Promise<MemorySliceData | null>;
   writeMemoryCell: (memoryInstanceId: string, address: number, value: number) => Promise<boolean>;
+  setOscilloscoping: (enabled: boolean) => Promise<OscilloscopeSnapshot | null>;
+  readOscilloscope: () => Promise<OscilloscopeSnapshot | null>;
+  clearOscilloscope: () => Promise<OscilloscopeSnapshot | null>;
+  readProbeHistory: (probeId: string) => Promise<ProbeHistorySnapshot | null>;
+  markProbeHistory: (probeId: string) => Promise<ProbeHistorySnapshot | null>;
   snapshot: SimulationSnapshot | null;
   circuitMap: CircuitMap | null;
   rootCircuitMap: CircuitMap | null;
@@ -75,6 +86,8 @@ export const DEFAULT_SIMULATION_STATE: SimulationContextType = {
   isSimulating: false,
   isPaused: false,
   isRunning: false,
+  hasProbes: false,
+  isOscilloscoping: false,
   frameRateLimit: 30,
   setFrameRateLimit: () => {},
   startSimulation: async () => null,
@@ -87,6 +100,11 @@ export const DEFAULT_SIMULATION_STATE: SimulationContextType = {
   flushPersistentMemories: async () => false,
   readMemorySlice: async () => null,
   writeMemoryCell: async () => false,
+  setOscilloscoping: async () => null,
+  readOscilloscope: async () => null,
+  clearOscilloscope: async () => null,
+  readProbeHistory: async () => null,
+  markProbeHistory: async () => null,
   snapshot: null,
   circuitMap: null,
   rootCircuitMap: null,

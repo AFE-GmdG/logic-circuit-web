@@ -7,7 +7,7 @@
 
 ## 🚀 Aktive User Story
 
-*Aktuell ist keine User Story aktiv — Version 1.0.0 ist abgeschlossen. Nächste Story bei Bedarf aus der Post-1.0 Roadmap wählen.*
+*(Aktuell keine aktive User Story in Umsetzung – die Features bis **Release 1.1.0** wurden vollständig abgeschlossen. Als nächste Story ist `US-017` im Backlog geplant.)*
 
 ```mermaid
 kanban
@@ -20,36 +20,33 @@ kanban
 
 ---
 
-## ✅ Abgeschlossene User Stories (Release 1.0)
+## ✅ Abgeschlossene User Stories & Releases
 
-Sämtliche für **Version 1.0.0** abgeschlossenen User Stories (`US-001` bis `US-015` sowie `US-018` bis `US-023`), Tasks (`T-001` bis `T-067`) und behobenen Bugs (`B-001`, `B-003`, `B-004`) sind in der ausgelagerten Chronik zusammengefasst:
+Sämtliche für **Version 1.0.0** und **Version 1.1.0** abgeschlossenen User Stories (`US-001` bis `US-016` sowie `US-018` bis `US-026`), Tasks (`T-001` bis `T-079`) und behobenen Bugs (`B-001` bis `B-004`) sind in der Release-Chronik (`docs/history.md`) erfasst:
 
-👉 **[📜 Was bisher geschah – Chronik zu Release 1.0 (`docs/history-1.0.md`)](history-1.0.md)**
+👉 **[📜 Was bisher geschah – Release-Chronik (`docs/history.md`)](history.md)**
 
 ---
 
 ## 📖 Backlog
 
-*Für Version 1.0 sind alle geplanten User Stories abgeschlossen.*
+### Ziel-Release 1.2.0
 
----
+| Story | Titel | Priorität | Geplante Tasks | Kurzbeschreibung |
+| :--- | :--- | :--- | :--- | :--- |
+| **[US-017](user_stories/US-017-post-10-schaltungs-bibliothek-und-verwaltung.md)** | Schaltungs-Bibliothek & Bibliotheksverwaltung | Niedrig | *(offen)* | Persistente Bibliothek wiederverwendbarer Schaltungen (Standard-ICs & eigene Bausteine) inkl. Metadaten, `.lcweb`- und `.CircuitProject`-Austausch (erfordert voraussichtlich Schemaerweiterung). |
 
-## 🔭 Post-1.0 Roadmap (Zurückgestellt)
+### Post 1.2.0
 
-| Story | Titel | Priorität | Kurzbeschreibung |
-| :--- | :--- | :--- | :--- |
-| **[US-016](user_stories/US-016-post-10-analyse-und-export-werkzeuge.md)** | Post-1.0 Analyse- & Export-Werkzeuge | Niedrig | Wahrheitstabelle (`DialogTruthTable` inkl. `validators`), Oszilloskop (`DialogOscilloscope`), Verwendungsnachweis (`DialogUsage`), Schaltungsbericht (`DialogReport`) und HDL-Export (Verilog/VHDL). |
-| **[US-017](user_stories/US-017-post-10-schaltungs-bibliothek-und-verwaltung.md)** | Post-1.0 Schaltungs-Bibliothek & Bibliotheksverwaltung | Niedrig | Aufbau und Verwaltung einer persistenten Bibliothek wiederverwendbarer Schaltungen (Standard-ICs & eigene Bausteine) zur direkten Übernahme in laufende Projekte inkl. `.lcweb`- und `.CircuitProject`-Austausch. |
+| Story | Titel | Priorität | Geplante Tasks | Kurzbeschreibung |
+| :--- | :--- | :--- | :--- | :--- |
+| **[US-027](user_stories/US-027-integrierte-dokumentation-und-interaktive-hilfe.md)** | Umfassendes Benutzerhandbuch & interaktive Online-Hilfe (`F1`) | Mittel | *(offen)* | Eigener Vite-Entry-Point (`help.html`) mit `F1`-Kontext-Shortcut, Menüeintrag, Editor-/Bauteil-Handbuch, Schaltungs-Tutorials, interaktivem Wahrheitstabellen-Filter-Playground und MCP-Setup-/Prompt-Beispielen. |
 
 ---
 
 ## 🐛 Gemeldete Bugs & Fehlertracking
 
-> 📚 Alle in Version 1.0 behobenen Bugs (`B-001`, `B-003`, `B-004`) sind in **[`docs/history-1.0.md`](history-1.0.md)** dokumentiert.
-
-| Bug | Titel | Priorität | Status | Kurzbeschreibung |
-| :--- | :--- | :--- | :--- | :--- |
-| **[B-002](bugs/B-002-copy-web-paste-desktop-ignoriert.md)** | Copy (Web) → Paste (Desktop) wird ignoriert | Mittel | 📋 Offen | Auswahl per `Strg+C` / Menü (*Für Desktop kopieren (XML)*) aus der WebApp wird beim Einfügen (`Strg+V`) in LogicCircuit Desktop (`2.26.9.1`) weiterhin ignoriert, während Desktop → Web (`utf-16` / Default-Namespace ohne Präfix) und Web ↔ Web funktionieren. |
+> 📚 Alle bis Version 1.1.0 behobenen Bugs (`B-001` bis `B-004`) sind in **[`docs/history.md`](history.md)** dokumentiert. Aktuell liegen keine offenen Fehlerberichte vor.
 
 ---
 

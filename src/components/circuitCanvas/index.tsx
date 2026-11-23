@@ -32,6 +32,7 @@ import {
   getButtonInstanceId,
   getGraphicsArrayInstanceId,
   getMemoryInstanceId,
+  getProbeInstanceId,
 } from "../../simulation/compiler/circuitMap";
 import type CircuitMap from "../../simulation/compiler/circuitMap";
 import {
@@ -98,6 +99,7 @@ import SelectionBox from "./selectionBox";
 import TextNoteModal from "./textNoteModal";
 import TextNoteView from "./textNoteView";
 import ConfirmDialog from "../app/confirmDialog";
+import ProbeHistoryDialog from "../app/probeHistoryDialog";
 import SubCircuitGlyph from "../componentPalette/subCircuitGlyph";
 import MemoryInspectorDialog from "../memoryInspectorDialog";
 import PropertyDialog from "../propertyDialog";
@@ -310,6 +312,10 @@ export function dispatchSimulationSymbolDoubleClick(params: {
     symbol: CircuitSymbol,
     activeSimulationMap: CircuitMap | null | undefined,
   ) => void;
+  onOpenProbeHistory?: (
+    symbol: CircuitSymbol,
+    activeSimulationMap: CircuitMap | null | undefined,
+  ) => void;
 }): boolean {
   const targetEl = params.target as { closest?: (selector: string) => unknown } | null;
   if (targetEl?.closest?.("[data-display-button-path]")) {
@@ -321,6 +327,10 @@ export function dispatchSimulationSymbolDoubleClick(params: {
       params.selectCircuitMap(childMap);
       return true;
     }
+  }
+  if (params.symbol.circuit.kind === "circuitProbe" && params.onOpenProbeHistory) {
+    params.onOpenProbeHistory(params.symbol, params.activeSimulationMap);
+    return true;
   }
   if (
     (params.symbol.circuit.kind === "memory" || params.symbol.circuit.kind === "graphicsArray") &&
@@ -541,6 +551,11 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     memoryInstanceId: string;
     circuitPath: string;
   } | null>(null);
+  const [inspectingProbe, setInspectingProbe] = React.useState<{
+    symbol: CircuitSymbol;
+    probeInstanceId: string;
+    circuitPath: string;
+  } | null>(null);
   const [isFindBarOpen, setIsFindBarOpen] = React.useState(false);
   const [findBarFocusSignal, setFindBarFocusSignal] = React.useState(0);
 
@@ -608,6 +623,20 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     [isSimulating],
   );
 
+  const handleOpenProbeHistory = React.useCallback(
+    (symbol: CircuitSymbol, simMap: CircuitMap | null | undefined) => {
+      if (!isSimulating || symbol.circuit.kind !== "circuitProbe") {
+        return;
+      }
+      setInspectingProbe({
+        symbol,
+        probeInstanceId: getProbeInstanceId(simMap, symbol),
+        circuitPath: simMap ? simMap.path(symbol) : symbol.circuit.name,
+      });
+    },
+    [isSimulating],
+  );
+
   React.useEffect(
     () => {
       if (isSimulating) {
@@ -621,6 +650,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         setFloatingPaste(null);
       } else {
         setInspectingMemory(null);
+        setInspectingProbe(null);
       }
     },
     [isSimulating],
@@ -1651,9 +1681,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     ],
   );
 
-  // Mausrad-Zoom zentriert auf die Cursorposition
+  // Mausrad-Zoom zentriert auf die Cursorposition (explizit non-passive, damit preventDefault ohne Browser-Warnung greift)
   const handleWheel = React.useCallback(
-    (event: React.WheelEvent<SVGSVGElement>) => {
+    (event: WheelEvent) => {
       event.preventDefault();
       const container = containerRef.current;
       if (!container) {
@@ -1680,6 +1710,21 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       setViewport(nextViewport);
     },
     [setViewport, viewport],
+  );
+
+  React.useEffect(
+    () => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+
+      container.addEventListener("wheel", handleWheel, { passive: false });
+      return () => {
+        container.removeEventListener("wheel", handleWheel);
+      };
+    },
+    [handleWheel],
   );
 
   // Starten des Leitungszeichnens (bei Klick nahe einem Pin) oder Verschiebens beim Klick auf ein Bauteil-Symbol
@@ -3815,7 +3860,6 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         ref={containerRef}
         className="schematic-viewport"
         style={{ cursor: cursorStyle }}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -4088,6 +4132,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
                       activeSimulationMap,
                       selectCircuitMap,
                       onOpenMemoryInspector: handleOpenMemoryInspector,
+                      onOpenProbeHistory: handleOpenProbeHistory,
                     });
                     return;
                   }
@@ -4416,6 +4461,15 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         memoryInstanceId={inspectingMemory?.memoryInstanceId ?? null}
         circuitPath={inspectingMemory?.circuitPath}
         onClose={() => setInspectingMemory(null)}
+      />
+
+      {/* Messsonden-Verlaufsdialog beim Doppelklick auf eine Probe im Simulationsmodus */}
+      <ProbeHistoryDialog
+        isOpen={inspectingProbe !== null}
+        symbol={inspectingProbe?.symbol ?? null}
+        probeInstanceId={inspectingProbe?.probeInstanceId ?? null}
+        circuitPath={inspectingProbe?.circuitPath}
+        onClose={() => setInspectingProbe(null)}
       />
 
       {/* Sicherheitsabfrage beim Ablegen einer Projektdatei trotz ungespeicherter Änderungen */}

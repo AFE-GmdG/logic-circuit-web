@@ -89,7 +89,7 @@ Die weiterführende Architektur- und Entwicklerdokumentation befindet sich im Ve
 - **[`docs/data-model.md`](docs/data-model.md):** Tiefgehende Spezifikation des Schaltungs-Datenmodells (`CircuitProject`, `Circuit`, `CircuitSymbol`, `Jam`, `ConductorMap`, `CircuitMap`, `CircuitState`).
 - **[`docs/mcp.md`](docs/mcp.md):** Architektur, Werkzeugkatalog und Deployment-Leitfaden für die lokale und Remote-MCP-Integration.
 - **[`docs/coding-rules.md`](docs/coding-rules.md):** Verbindliche Entwicklungs-, Styling- und Formatierungsrichtlinien.
-- **[`docs/history-1.0.md`](docs/history-1.0.md):** Chronik „Was bisher geschah“ mit allen für Release 1.0 abgeschlossenen User Stories, Tasks und Bugfixes.
+- **[`docs/history.md`](docs/history.md):** Chronik „Was bisher geschah“ mit allen abgeschlossenen Releases, User Stories, Tasks und Bugfixes.
 - **[`docs/scrum-board.md`](docs/scrum-board.md):** Entwickler-Board und Post-1.0-Roadmap.
 
 ---

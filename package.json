@@ -1,7 +1,7 @@
 {
   "name": "logic-circuit-web",
   "description": "Logic Circuit Web - Interactive Digital Logic Circuit CAD and WebWorker Simulator in the Browser",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "private": true,
   "license": "MIT",

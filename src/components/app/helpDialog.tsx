@@ -48,6 +48,7 @@ const HelpDialog = styled(({
 
   const editorShortcuts: ShortcutEntry[] = [
     { keys: t("dialog.help.shortcuts.editor.findKeys"), description: t("dialog.help.shortcuts.editor.findDesc") },
+    { keys: t("dialog.help.shortcuts.editor.truthTableKeys"), description: t("dialog.help.shortcuts.editor.truthTableDesc") },
     { keys: t("dialog.help.shortcuts.editor.propertiesKeys"), description: t("dialog.help.shortcuts.editor.propertiesDesc") },
     { keys: t("dialog.help.shortcuts.editor.selectAllKeys"), description: t("dialog.help.shortcuts.editor.selectAllDesc") },
     { keys: t("dialog.help.shortcuts.editor.clipboardKeys"), description: t("dialog.help.shortcuts.editor.clipboardDesc") },
@@ -65,6 +66,8 @@ const HelpDialog = styled(({
     { keys: t("dialog.help.shortcuts.simulation.toggleKeys"), description: t("dialog.help.shortcuts.simulation.toggleDesc") },
     { keys: t("dialog.help.shortcuts.simulation.stopKeys"), description: t("dialog.help.shortcuts.simulation.stopDesc") },
     { keys: t("dialog.help.shortcuts.simulation.stepKeys"), description: t("dialog.help.shortcuts.simulation.stepDesc") },
+    { keys: t("dialog.help.shortcuts.simulation.oscilloscopeKeys"), description: t("dialog.help.shortcuts.simulation.oscilloscopeDesc") },
+    { keys: t("dialog.help.shortcuts.simulation.probeHistoryKeys"), description: t("dialog.help.shortcuts.simulation.probeHistoryDesc") },
   ];
 
   const modalContent = (

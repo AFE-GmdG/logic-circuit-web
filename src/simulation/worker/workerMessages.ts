@@ -3,6 +3,10 @@ import type SensorType from "../../types/circuit/sensorType";
 import type SynthesizerMode from "../../types/circuit/synthesizerMode";
 import type FrameRateLimit from "../../types/simulation/frameRateLimit";
 import type GraphicsArraySnapshot from "../../types/simulation/graphicsArraySnapshot";
+import type {
+  OscilloscopeSnapshot,
+  ProbeHistorySnapshot,
+} from "../../types/simulation/oscilloscope";
 import type SimulationErrorLocation from "../../types/simulation/simulationErrorLocation";
 
 import type { CircuitExceptionCause } from "../compiler/circuitException";
@@ -52,6 +56,8 @@ export type SimulationTelemetry = {
   isOscillating: boolean;
   oscillationLocation?: SimulationErrorLocation | null;
   hasClocks?: boolean;
+  hasProbes?: boolean;
+  isOscilloscoping?: boolean;
   actualFrequency: number;
   totalSteps: number;
   timestamp: number;
@@ -124,7 +130,12 @@ export type WorkerCommand =
     address: number;
     value: number;
   }
-  | { type: "FLUSH_PERSISTENT_MEMORIES"; requestId: number };
+  | { type: "FLUSH_PERSISTENT_MEMORIES"; requestId: number }
+  | { type: "READ_PROBE_HISTORY"; requestId: number; probeId: string }
+  | { type: "MARK_PROBE_HISTORY"; requestId: number; probeId: string }
+  | { type: "SET_OSCILLOSCOPING"; requestId: number; enabled: boolean }
+  | { type: "READ_OSCILLOSCOPE"; requestId: number }
+  | { type: "CLEAR_OSCILLOSCOPE"; requestId: number };
 
 // Antworten und Ereignisse vom WebWorker an den Hauptthread
 export type WorkerResponse =
@@ -157,4 +168,6 @@ export type WorkerResponse =
     revision: number;
     snapshot?: SimulationSnapshot;
   }
-  | { type: "PERSISTENT_MEMORIES_FLUSHED"; requestId: number; persistentMemories: PersistentMemoryDump[] };
+  | { type: "PERSISTENT_MEMORIES_FLUSHED"; requestId: number; persistentMemories: PersistentMemoryDump[] }
+  | { type: "PROBE_HISTORY"; requestId: number; history: ProbeHistorySnapshot | null }
+  | { type: "OSCILLOSCOPE_DATA"; requestId: number; data: OscilloscopeSnapshot | null };

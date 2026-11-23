@@ -36,6 +36,9 @@ export type MainMenuProps = React.ComponentPropsWithoutRef<"div"> & {
   hasCircuitElements?: boolean;
   canPaste?: boolean;
   canDeleteCurrentCircuit: boolean;
+  canOpenTruthTable?: boolean;
+  canOpenOscilloscope?: boolean;
+  canExportHdl?: boolean;
   deleteCircuitDisabledReason?: string;
   onClose: () => void;
   onNewProject: () => void;
@@ -44,6 +47,7 @@ export type MainMenuProps = React.ComponentPropsWithoutRef<"div"> & {
   onSaveProject: () => void;
   onSaveProjectAs: () => void;
   onExportDesktopXml?: () => void;
+  onExportHdl?: () => void;
   onExportImage: () => void;
   onOpenProjectSettings: () => void;
   onUndo: () => void;
@@ -59,6 +63,10 @@ export type MainMenuProps = React.ComponentPropsWithoutRef<"div"> & {
   onEditCurrentCircuit: () => void;
   onCreateCircuit: () => void;
   onDeleteCurrentCircuit: () => void;
+  onOpenTruthTable?: () => void;
+  onOpenOscilloscope?: () => void;
+  onOpenUsage?: () => void;
+  onOpenReport?: () => void;
   onToggleSimulation: () => void;
   onStepSimulation: () => void;
   onStopSimulation: () => void;
@@ -85,6 +93,9 @@ const MainMenu = styled(({
   hasCircuitElements = false,
   canPaste = false,
   canDeleteCurrentCircuit,
+  canOpenTruthTable = false,
+  canOpenOscilloscope = false,
+  canExportHdl = false,
   deleteCircuitDisabledReason,
   onClose,
   onNewProject,
@@ -93,6 +104,7 @@ const MainMenu = styled(({
   onSaveProject,
   onSaveProjectAs,
   onExportDesktopXml,
+  onExportHdl,
   onExportImage,
   onOpenProjectSettings,
   onUndo,
@@ -108,6 +120,10 @@ const MainMenu = styled(({
   onEditCurrentCircuit,
   onCreateCircuit,
   onDeleteCurrentCircuit,
+  onOpenTruthTable,
+  onOpenOscilloscope,
+  onOpenUsage,
+  onOpenReport,
   onToggleSimulation,
   onStepSimulation,
   onStopSimulation,
@@ -239,6 +255,15 @@ const MainMenu = styled(({
               disabled: !onExportDesktopXml,
               tooltip: t("menu.items.fileExportDesktopTooltip"),
               onSelect: onExportDesktopXml,
+            },
+            {
+              id: "file-export-hdl",
+              label: t("menu.items.fileExportHdl"),
+              disabled: !canExportHdl || !onExportHdl,
+              tooltip: !canExportHdl
+                ? t("menu.items.fileExportHdlDisabledTooltip")
+                : t("menu.items.fileExportHdlTooltip"),
+              onSelect: onExportHdl,
             },
             {
               id: "file-export-image",
@@ -373,6 +398,39 @@ const MainMenu = styled(({
               onSelect: onDeleteCurrentCircuit,
             },
             {
+              id: "circuit-truth-table",
+              label: t("menu.items.circuitTruthTable"),
+              shortcut: t("menu.shortcuts.truthTable"),
+              separatorBefore: true,
+              disabled: !canOpenTruthTable || !onOpenTruthTable,
+              tooltip: !canOpenTruthTable
+                ? t("menu.items.circuitTruthTableDisabledTooltip")
+                : t("menu.items.circuitTruthTableTooltip"),
+              onSelect: onOpenTruthTable,
+            },
+            {
+              id: "circuit-oscilloscope",
+              label: t("menu.items.circuitOscilloscope"),
+              shortcut: t("menu.shortcuts.oscilloscope"),
+              disabled: !canOpenOscilloscope || !onOpenOscilloscope,
+              tooltip: !canOpenOscilloscope
+                ? t("menu.items.circuitOscilloscopeDisabledTooltip")
+                : t("menu.items.circuitOscilloscopeTooltip"),
+              onSelect: onOpenOscilloscope,
+            },
+            {
+              id: "circuit-usage",
+              label: t("menu.items.circuitUsage"),
+              tooltip: t("menu.items.circuitUsageTooltip"),
+              onSelect: onOpenUsage,
+            },
+            {
+              id: "circuit-report",
+              label: t("menu.items.circuitReport"),
+              tooltip: t("menu.items.circuitReportTooltip"),
+              onSelect: onOpenReport,
+            },
+            {
               id: "circuit-sim-toggle",
               label: simToggleLabel,
               shortcut: t("menu.shortcuts.simToggle"),
@@ -448,6 +506,9 @@ const MainMenu = styled(({
     },
     [
       canDeleteCurrentCircuit,
+      canExportHdl,
+      canOpenOscilloscope,
+      canOpenTruthTable,
       canPaste,
       canRedo,
       canUndo,
@@ -467,15 +528,20 @@ const MainMenu = styled(({
       onDeleteSelected,
       onEditCurrentCircuit,
       onExportDesktopXml,
+      onExportHdl,
       onExportImage,
       onImportProject,
       onLoadDemo,
       onNewProject,
       onOpenHelp,
       onOpenOptions,
+      onOpenOscilloscope,
       onOpenPrivacy,
       onOpenProjectSettings,
+      onOpenReport,
       onOpenSearch,
+      onOpenTruthTable,
+      onOpenUsage,
       onPaste,
       onRedo,
       onRotateLeft,

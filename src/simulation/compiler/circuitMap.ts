@@ -82,6 +82,17 @@ export function getButtonInstanceId(
   return symbolChain.length > 0 ? `${symbolChain.join("/")}/${rawButtonId}` : rawButtonId;
 }
 
+// Ermittelt eine im Instanzbaum eindeutige Probe-ID (Wurzel: rawProbeId, Subschaltung: Pfad/rawProbeId)
+export function getProbeInstanceId(
+  map: CircuitMap | null | undefined,
+  symbol: CircuitSymbol,
+): string {
+  const probe = symbol.circuit as Partial<CircuitProbe>;
+  const rawProbeId = probe.circuitProbeId ?? symbol.circuit.circuitId;
+  const symbolChain = getCircuitMapSymbolChain(map);
+  return symbolChain.length > 0 ? `${symbolChain.join("/")}/${rawProbeId}` : rawProbeId;
+}
+
 // Ermittelt eine im Instanzbaum eindeutige Speicher-ID (analog zu getButtonInstanceId)
 export function getMemoryInstanceId(
   map: CircuitMap | null | undefined,
@@ -496,7 +507,7 @@ export class CircuitMap {
   }
 
   // Kompiliert das Schaltungsmodell und erzeugt betriebsbereite CircuitState- und Funktions-Instanzen
-  apply(_probeCapacity = 100): CircuitState {
+  apply(probeCapacity = 100): CircuitState {
     const { symbolMapList, circuitState } = this.#compileTopology();
 
     // Verbot mehrfach instanziierter persistenter RAMs (onStart === "data") analog zu CircuitMap.Validate
@@ -621,7 +632,16 @@ export class CircuitMap {
         const inParams = inJams.flatMap((j) => map.allParameters(j));
         const inIndices = inParams.map((p) => p.result.stateIndex);
         const probeFormat = probeCircuit.displayFormat ?? (probeCircuit.isHex ? "hex" : "bin");
-        registerFn(new FunctionProbe(circuitState, inIndices, circuit.name, circuit.circuitId, probeFormat));
+        const rawProbeId = probeCircuit.circuitProbeId ?? circuit.circuitId;
+        const probeInstanceId = getProbeInstanceId(map.circuitMap, sym);
+        const probePath = map.circuitMap.path(sym);
+        registerFn(
+          new FunctionProbe(circuitState, inIndices, circuit.name, probeInstanceId, probeFormat, {
+            rawProbeId,
+            path: probePath,
+            capacity: probeCapacity,
+          }),
+        );
       } else if (circuit.kind === "clock") {
         const outRes = map.results;
         const outIndices = outRes.map((r) => r.stateIndex);

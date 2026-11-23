@@ -89,7 +89,7 @@ Detailed technical documentation is located in the [`docs/`](docs/) directory *(
 - **[`docs/data-model.md`](docs/data-model.md):** Deep-dive specification of the circuit data model (`CircuitProject`, `Circuit`, `CircuitSymbol`, `Jam`, `ConductorMap`, `CircuitMap`, `CircuitState`).
 - **[`docs/mcp.md`](docs/mcp.md):** Architecture, tool catalog, and deployment guide for the local and remote Model Context Protocol (MCP) integration.
 - **[`docs/coding-rules.md`](docs/coding-rules.md):** Mandatory TypeScript, React, Emotion, and formatting guidelines.
-- **[`docs/history-1.0.md`](docs/history-1.0.md):** Comprehensive chronicle of all user stories, tasks, and bug fixes completed for Release 1.0.
+- **[`docs/history.md`](docs/history.md):** Comprehensive chronicle of all completed releases, user stories, tasks, and bug fixes.
 - **[`docs/scrum-board.md`](docs/scrum-board.md):** Development board and Post-1.0 roadmap.
 
 ---

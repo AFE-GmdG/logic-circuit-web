@@ -132,35 +132,15 @@ describe("T-037: Hierarchischer Schaltungs-Instanzbaum (RunningTree) in der Seit
 
     // Rendern des RunningCircuitTree mit simuliertem Context
     const mockSimContext: React.ContextType<typeof SimulationContext> = {
+      ...DEFAULT_SIMULATION_STATE,
       isSimulating: true,
       isPaused: false,
       isRunning: true,
       frameRateLimit: 30,
-      setFrameRateLimit: () => {},
-      startSimulation: async () => null,
-      ensurePausedSimulation: async () => null,
-      pauseSimulation: () => {},
-      step: async () => null,
-      stopSimulation: async () => {},
-      toggleRunning: () => {},
-      reset: async () => {},
-      flushPersistentMemories: async () => false,
-      readMemorySlice: async () => null,
-      writeMemoryCell: async () => false,
-      snapshot: null,
       circuitMap: rootMap,
       rootCircuitMap: rootMap,
       selectedCircuitMap: adderMap,
-      selectCircuitMap: () => {},
-      wireStateMap: new Map(),
-      isOscillating: false,
       actualFrequency: 1500,
-      totalSteps: 0,
-      setButtonState: async () => null,
-      toggleButton: async () => null,
-      setSensorValue: async () => null,
-      pullSnapshot: async () => null,
-      getWireState: () => null,
     };
 
     const html = renderToStaticMarkup(

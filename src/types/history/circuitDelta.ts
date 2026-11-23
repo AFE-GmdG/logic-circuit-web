@@ -76,6 +76,7 @@ type CircuitDelta =
       showLabelAbove?: boolean;
       displayMargin?: DisplayMargin;
       exportToHDL?: boolean;
+      validators?: string;
       pinOrder?: { pinId: string; index: number }[];
     };
     afterLogicalCircuit?: {
@@ -87,6 +88,7 @@ type CircuitDelta =
       showLabelAbove?: boolean;
       displayMargin?: DisplayMargin;
       exportToHDL?: boolean;
+      validators?: string;
       pinOrder?: { pinId: string; index: number }[];
     };
     wireChanges?: WireEndpointUpdate[];

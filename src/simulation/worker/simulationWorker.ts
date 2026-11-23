@@ -153,6 +153,56 @@ self.onmessage = (event: MessageEvent<WorkerCommand>): void => {
         });
         break;
       }
+
+      case "READ_PROBE_HISTORY": {
+        const history = runner ? runner.readProbeHistory(message.probeId) : null;
+        postResponse({
+          type: "PROBE_HISTORY",
+          requestId: message.requestId,
+          history,
+        });
+        break;
+      }
+
+      case "MARK_PROBE_HISTORY": {
+        const history = runner ? runner.markProbeHistory(message.probeId) : null;
+        postResponse({
+          type: "PROBE_HISTORY",
+          requestId: message.requestId,
+          history,
+        });
+        break;
+      }
+
+      case "SET_OSCILLOSCOPING": {
+        const data = runner ? runner.setOscilloscoping(message.enabled) : null;
+        postResponse({
+          type: "OSCILLOSCOPE_DATA",
+          requestId: message.requestId,
+          data,
+        });
+        break;
+      }
+
+      case "READ_OSCILLOSCOPE": {
+        const data = runner ? runner.readOscilloscope() : null;
+        postResponse({
+          type: "OSCILLOSCOPE_DATA",
+          requestId: message.requestId,
+          data,
+        });
+        break;
+      }
+
+      case "CLEAR_OSCILLOSCOPE": {
+        const data = runner ? runner.clearOscilloscope() : null;
+        postResponse({
+          type: "OSCILLOSCOPE_DATA",
+          requestId: message.requestId,
+          data,
+        });
+        break;
+      }
     }
   } catch (error) {
     const err = error as Error;
