@@ -113,7 +113,7 @@ import {
 
 import toolDefinitions from "./toolDefinitions.json";
 
-// Werkzeugkatalog (Single Source of Truth, wird auch von server/bin/mcpCli.mjs gelesen)
+// Werkzeugkatalog (Single Source of Truth, wird auch von server/mcpHttpHandler.ts gelesen)
 export const MCP_TOOL_DEFINITIONS: McpToolDefinition[] = toolDefinitions;
 
 type McpToolHandler = (snapshot: McpCircuitSnapshot, params: Record<string, unknown>) => unknown | Promise<unknown>;

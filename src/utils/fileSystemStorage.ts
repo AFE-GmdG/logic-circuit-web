@@ -72,6 +72,20 @@ export type LastProjectHandleRecord = {
   savedAt: number;
 };
 
+export type LibraryHandleRecord = {
+  id: "active-library";
+  fileName: string;
+  handle: FileSystemFileHandleLike;
+  savedAt: number;
+};
+
+export type LibraryCacheRecord = {
+  id: "active-library-cache";
+  fileName: string | null;
+  content: string;
+  cachedAt: number;
+};
+
 export type HandleStoreAdapter = {
   getAllDirectories: () => Promise<StoredDirectoryEntry[]>;
   putDirectory: (entry: StoredDirectoryEntry) => Promise<void>;
@@ -80,9 +94,19 @@ export type HandleStoreAdapter = {
   putLastProject: (record: LastProjectHandleRecord | null) => Promise<void>;
 };
 
+export type LibraryStoreAdapter = {
+  getLibraryHandle: () => Promise<LibraryHandleRecord | null>;
+  putLibraryHandle: (record: LibraryHandleRecord | null) => Promise<void>;
+  getLibraryCache: () => Promise<LibraryCacheRecord | null>;
+  putLibraryCache: (record: LibraryCacheRecord | null) => Promise<void>;
+};
+
 export type FileSystemDeps = {
   win?: FileSystemPickerWindow | null;
   store?: HandleStoreAdapter;
+  libraryStore?: LibraryStoreAdapter;
+  idbTimeoutMs?: number;
+  permissionQueryTimeoutMs?: number;
 };
 
 export type OpenProjectPickerResult =
@@ -100,10 +124,16 @@ export type LoadLastProjectResult =
   | { kind: "unavailable"; reason: string };
 
 const DB_NAME = "logicCircuit-fs";
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const STORE_DIRECTORIES = "directories";
 const STORE_LAST_PROJECT = "lastProject";
+const STORE_LIBRARY_HANDLE = "libraryHandle";
+const STORE_LIBRARY_CACHE = "libraryCache";
 const LAST_PROJECT_RECORD_ID = "last-project";
+const LIBRARY_HANDLE_RECORD_ID = "active-library";
+const LIBRARY_CACHE_RECORD_ID = "active-library-cache";
+const DEFAULT_IDB_TIMEOUT_MS = 4000;
+const DEFAULT_PERMISSION_QUERY_TIMEOUT_MS = 2000;
 
 export const OPEN_PROJECT_PICKER_TYPES: FilePickerAcceptType[] = [
   {
@@ -194,6 +224,18 @@ export function getSaveDesktopXmlPickerTypes(): FilePickerAcceptType[] {
   ];
 }
 
+// Liefert die lokalisierten Dateifilter zum Öffnen und Speichern einer Schaltungs-Bibliothek (.lclib)
+export function getLibraryPickerTypes(): FilePickerAcceptType[] {
+  return [
+    {
+      description: i18n.t("filePicker.circuitLibrary"),
+      accept: {
+        "application/json": [".lclib"],
+      },
+    },
+  ];
+}
+
 function resolvePickerWindow(deps?: FileSystemDeps): FileSystemPickerWindow | null {
   if (deps && "win" in deps) {
     return deps.win ?? null;
@@ -228,10 +270,51 @@ export function isFileSystemAccessSupported(deps?: FileSystemDeps): boolean {
   );
 }
 
+function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => T,
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(onTimeout());
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 // Prüft, ob ein Handle noch gültige Berechtigungen besitzt (ohne Nutzerabfrage)
 export async function queryHandlePermission(
   handle: FileSystemHandleLike | null | undefined,
   mode: FileSystemPermissionMode = "readwrite",
+  options?: { timeoutMs?: number },
 ): Promise<FileSystemPermissionStatus> {
   if (!handle) {
     return "unsupported";
@@ -240,7 +323,12 @@ export async function queryHandlePermission(
     return "granted";
   }
   try {
-    return await handle.queryPermission({ mode });
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_PERMISSION_QUERY_TIMEOUT_MS;
+    return await raceWithTimeout(
+      Promise.resolve(handle.queryPermission({ mode })),
+      timeoutMs,
+      () => "prompt",
+    );
   } catch {
     return "denied";
   }
@@ -250,11 +338,12 @@ export async function queryHandlePermission(
 export async function requestHandlePermission(
   handle: FileSystemHandleLike | null | undefined,
   mode: FileSystemPermissionMode = "readwrite",
+  options?: { timeoutMs?: number },
 ): Promise<FileSystemPermissionStatus> {
   if (!handle) {
     return "unsupported";
   }
-  const current = await queryHandlePermission(handle, mode);
+  const current = await queryHandlePermission(handle, mode, options);
   if (current === "granted" || current === "unsupported") {
     return current;
   }
@@ -268,8 +357,30 @@ export async function requestHandlePermission(
   }
 }
 
-// Erstellt einen IndexedDB-Adapter zum dauerhaften Speichern von Verzeichnis- und Dateihandles
-function createIndexedDbHandleStore(idbFactory?: IDBFactory): HandleStoreAdapter {
+const idbQueueByFactory = new WeakMap<IDBFactory, Promise<void>>();
+
+function enqueueIndexedDbOp<T>(factory: IDBFactory | null, task: () => Promise<T>): Promise<T> {
+  if (!factory) {
+    return task();
+  }
+  const previous = idbQueueByFactory.get(factory) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  idbQueueByFactory.set(factory, tail);
+  return run;
+}
+
+// Erstellt einen IndexedDB-Adapter zum dauerhaften Speichern von Verzeichnis-, Projekt- und Bibliotheksdaten
+function createIndexedDbStores(
+  idbFactory?: IDBFactory,
+  idbTimeoutMs: number = DEFAULT_IDB_TIMEOUT_MS,
+): {
+  handleStore: HandleStoreAdapter;
+  libraryStore: LibraryStoreAdapter;
+} {
   const resolveFactory = (): IDBFactory | null => {
     if (idbFactory) {
       return idbFactory;
@@ -297,13 +408,25 @@ function createIndexedDbHandleStore(idbFactory?: IDBFactory): HandleStoreAdapter
       }
 
       let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
       const finish = (db: IDBDatabase | null) => {
         if (settled) {
+          if (db) {
+            closeQuietly(db);
+          }
           return;
         }
         settled = true;
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
         resolve(db);
       };
+
+      if (Number.isFinite(idbTimeoutMs) && idbTimeoutMs > 0) {
+        timeoutId = setTimeout(() => finish(null), idbTimeoutMs);
+      }
 
       try {
         const request = factory.open(DB_NAME, DB_VERSION);
@@ -314,6 +437,12 @@ function createIndexedDbHandleStore(idbFactory?: IDBFactory): HandleStoreAdapter
           }
           if (!db.objectStoreNames.contains(STORE_LAST_PROJECT)) {
             db.createObjectStore(STORE_LAST_PROJECT, { keyPath: "id" });
+          }
+          if (!db.objectStoreNames.contains(STORE_LIBRARY_HANDLE)) {
+            db.createObjectStore(STORE_LIBRARY_HANDLE, { keyPath: "id" });
+          }
+          if (!db.objectStoreNames.contains(STORE_LIBRARY_CACHE)) {
+            db.createObjectStore(STORE_LIBRARY_CACHE, { keyPath: "id" });
           }
         };
         request.onsuccess = () => {
@@ -337,102 +466,137 @@ function createIndexedDbHandleStore(idbFactory?: IDBFactory): HandleStoreAdapter
       bind: <R>(request: IDBRequest<R>, mapResult: (raw: R) => T) => void,
     ) => void,
   ): Promise<T> => {
-    const db = await openDatabase();
-    if (!db) {
-      return fallback;
-    }
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (value: T) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        closeQuietly(db);
-        resolve(value);
-      };
-
-      if (!db.objectStoreNames.contains(storeName)) {
-        finish(fallback);
-        return;
+    const factory = resolveFactory();
+    return enqueueIndexedDbOp(factory, async () => {
+      const db = await openDatabase();
+      if (!db) {
+        return fallback;
       }
 
-      try {
-        const tx = db.transaction(storeName, mode);
-        const store = tx.objectStore(storeName);
-        let resultValue = fallback;
-
-        const bind = <R>(request: IDBRequest<R>, mapResult: (raw: R) => T): void => {
-          request.onsuccess = () => {
-            try {
-              resultValue = mapResult(request.result);
-            } catch {
-              resultValue = fallback;
-            }
-          };
-          request.onerror = () => finish(fallback);
+      return new Promise((resolve) => {
+        let settled = false;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        const finish = (value: T) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          closeQuietly(db);
+          resolve(value);
         };
 
-        execute(store, bind);
-        tx.oncomplete = () => finish(resultValue);
-        tx.onerror = () => finish(fallback);
-        tx.onabort = () => finish(fallback);
-      } catch {
-        finish(fallback);
+        if (!db.objectStoreNames.contains(storeName)) {
+          finish(fallback);
+          return;
+        }
+
+        if (Number.isFinite(idbTimeoutMs) && idbTimeoutMs > 0) {
+          timeoutId = setTimeout(() => finish(fallback), idbTimeoutMs);
+        }
+
+        try {
+          const tx = db.transaction(storeName, mode);
+          const store = tx.objectStore(storeName);
+          let resultValue = fallback;
+
+          const bind = <R>(request: IDBRequest<R>, mapResult: (raw: R) => T): void => {
+            request.onsuccess = () => {
+              try {
+                resultValue = mapResult(request.result);
+              } catch {
+                resultValue = fallback;
+              }
+            };
+            request.onerror = () => finish(fallback);
+          };
+
+          execute(store, bind);
+          tx.oncomplete = () => finish(resultValue);
+          tx.onerror = () => finish(fallback);
+          tx.onabort = () => finish(fallback);
+        } catch {
+          finish(fallback);
+        }
+      });
+    });
+  };
+
+  const readSingleRecord = <T>(storeName: string, recordId: string): Promise<T | null> =>
+    runTransaction<T | null>(storeName, "readonly", null, (store, bind) => {
+      bind(store.get(recordId), (raw) => (raw as T | undefined) ?? null);
+    });
+
+  const writeOrDeleteRecord = async <T>(
+    storeName: string,
+    recordId: string,
+    record: T | null,
+  ): Promise<void> => {
+    await runTransaction<void>(storeName, "readwrite", undefined, (store, bind) => {
+      if (record) {
+        bind(store.put(record), () => undefined);
+      } else {
+        bind(store.delete(recordId), () => undefined);
       }
     });
   };
 
   return {
-    async getAllDirectories() {
-      return runTransaction<StoredDirectoryEntry[]>(
-        STORE_DIRECTORIES,
-        "readonly",
-        [],
-        (store, bind) => {
-          bind(store.getAll(), (raw) => {
-            const list = Array.isArray(raw) ? (raw as StoredDirectoryEntry[]) : [];
-            return list.slice().sort((a, b) => a.addedAt - b.addedAt);
-          });
-        },
-      );
+    handleStore: {
+      async getAllDirectories() {
+        return runTransaction<StoredDirectoryEntry[]>(
+          STORE_DIRECTORIES,
+          "readonly",
+          [],
+          (store, bind) => {
+            bind(store.getAll(), (raw) => {
+              const list = Array.isArray(raw) ? (raw as StoredDirectoryEntry[]) : [];
+              return list.slice().sort((a, b) => a.addedAt - b.addedAt);
+            });
+          },
+        );
+      },
+
+      async putDirectory(entry) {
+        await runTransaction<void>(STORE_DIRECTORIES, "readwrite", undefined, (store, bind) => {
+          bind(store.put(entry), () => undefined);
+        });
+      },
+
+      async deleteDirectory(id) {
+        await runTransaction<void>(STORE_DIRECTORIES, "readwrite", undefined, (store, bind) => {
+          bind(store.delete(id), () => undefined);
+        });
+      },
+
+      async getLastProject() {
+        return readSingleRecord<LastProjectHandleRecord>(STORE_LAST_PROJECT, LAST_PROJECT_RECORD_ID);
+      },
+
+      async putLastProject(record) {
+        await writeOrDeleteRecord(STORE_LAST_PROJECT, LAST_PROJECT_RECORD_ID, record);
+      },
     },
 
-    async putDirectory(entry) {
-      await runTransaction<void>(STORE_DIRECTORIES, "readwrite", undefined, (store, bind) => {
-        bind(store.put(entry), () => undefined);
-      });
-    },
+    libraryStore: {
+      async getLibraryHandle() {
+        return readSingleRecord<LibraryHandleRecord>(STORE_LIBRARY_HANDLE, LIBRARY_HANDLE_RECORD_ID);
+      },
 
-    async deleteDirectory(id) {
-      await runTransaction<void>(STORE_DIRECTORIES, "readwrite", undefined, (store, bind) => {
-        bind(store.delete(id), () => undefined);
-      });
-    },
+      async putLibraryHandle(record) {
+        await writeOrDeleteRecord(STORE_LIBRARY_HANDLE, LIBRARY_HANDLE_RECORD_ID, record);
+      },
 
-    async getLastProject() {
-      return runTransaction<LastProjectHandleRecord | null>(
-        STORE_LAST_PROJECT,
-        "readonly",
-        null,
-        (store, bind) => {
-          bind(
-            store.get(LAST_PROJECT_RECORD_ID),
-            (raw) => (raw as LastProjectHandleRecord | undefined) ?? null,
-          );
-        },
-      );
-    },
+      async getLibraryCache() {
+        return readSingleRecord<LibraryCacheRecord>(STORE_LIBRARY_CACHE, LIBRARY_CACHE_RECORD_ID);
+      },
 
-    async putLastProject(record) {
-      await runTransaction<void>(STORE_LAST_PROJECT, "readwrite", undefined, (store, bind) => {
-        if (record) {
-          bind(store.put(record), () => undefined);
-        } else {
-          bind(store.delete(LAST_PROJECT_RECORD_ID), () => undefined);
-        }
-      });
+      async putLibraryCache(record) {
+        await writeOrDeleteRecord(STORE_LIBRARY_CACHE, LIBRARY_CACHE_RECORD_ID, record);
+      },
     },
   };
 }
@@ -442,7 +606,15 @@ function resolveStore(deps?: FileSystemDeps): HandleStoreAdapter {
     return deps.store;
   }
   const win = resolvePickerWindow(deps);
-  return createIndexedDbHandleStore(win?.indexedDB);
+  return createIndexedDbStores(win?.indexedDB, deps?.idbTimeoutMs).handleStore;
+}
+
+function resolveLibraryStore(deps?: FileSystemDeps): LibraryStoreAdapter {
+  if (deps?.libraryStore) {
+    return deps.libraryStore;
+  }
+  const win = resolvePickerWindow(deps);
+  return createIndexedDbStores(win?.indexedDB, deps?.idbTimeoutMs).libraryStore;
 }
 
 // Lädt alle gespeicherten Projektverzeichnisse inkl. aktuellem Berechtigungsstatus
@@ -451,10 +623,13 @@ export async function listStoredDirectories(
 ): Promise<StoredDirectoryWithPermission[]> {
   const store = resolveStore(deps);
   const entries = await store.getAllDirectories();
+  const permissionOptions = deps?.permissionQueryTimeoutMs !== undefined
+    ? { timeoutMs: deps.permissionQueryTimeoutMs }
+    : undefined;
   const withPermissions = await Promise.all(
     entries.map(async (entry) => ({
       ...entry,
-      permission: await queryHandlePermission(entry.handle, "readwrite"),
+      permission: await queryHandlePermission(entry.handle, "readwrite", permissionOptions),
     })),
   );
   return withPermissions.sort((a, b) => a.addedAt - b.addedAt);
@@ -467,11 +642,17 @@ export async function addProjectDirectory(
 ): Promise<StoredDirectoryWithPermission[]> {
   const store = resolveStore(deps);
   const existing = await store.getAllDirectories();
+  const isSameEntryTimeoutMs = deps?.permissionQueryTimeoutMs ?? DEFAULT_PERMISSION_QUERY_TIMEOUT_MS;
 
   for (const item of existing) {
     if (typeof item.handle.isSameEntry === "function") {
       try {
-        if (await item.handle.isSameEntry(handle)) {
+        const same = await raceWithTimeout(
+          Promise.resolve(item.handle.isSameEntry(handle)),
+          isSameEntryTimeoutMs,
+          () => false,
+        );
+        if (same) {
           await store.putDirectory({
             ...item,
             name: handle.name,
@@ -914,4 +1095,130 @@ export async function exportTextFilesToDirectory(
     directoryName: dirHandle.name,
     fileCount: files.length,
   };
+}
+
+// Speichert oder löscht das Handle der verknüpften Schaltungs-Bibliothek in IndexedDB
+export async function saveLibraryFileHandle(
+  handle: FileSystemFileHandleLike | null,
+  deps?: FileSystemDeps,
+): Promise<void> {
+  const libraryStore = resolveLibraryStore(deps);
+  if (!handle) {
+    await libraryStore.putLibraryHandle(null);
+    return;
+  }
+  await libraryStore.putLibraryHandle({
+    id: LIBRARY_HANDLE_RECORD_ID,
+    fileName: handle.name,
+    handle,
+    savedAt: Date.now(),
+  });
+}
+
+// Lädt das gespeicherte Handle der Schaltungs-Bibliothek aus IndexedDB
+export async function loadLibraryFileHandle(
+  deps?: FileSystemDeps,
+): Promise<LibraryHandleRecord | null> {
+  const libraryStore = resolveLibraryStore(deps);
+  return libraryStore.getLibraryHandle();
+}
+
+// Speichert oder löscht den Read-Only-Cache der Schaltungs-Bibliothek in IndexedDB
+export async function saveLibraryCacheRecord(
+  record: { fileName: string | null; content: string; cachedAt?: number } | null,
+  deps?: FileSystemDeps,
+): Promise<void> {
+  const libraryStore = resolveLibraryStore(deps);
+  if (!record) {
+    await libraryStore.putLibraryCache(null);
+    return;
+  }
+  await libraryStore.putLibraryCache({
+    id: LIBRARY_CACHE_RECORD_ID,
+    fileName: record.fileName,
+    content: record.content,
+    cachedAt: record.cachedAt ?? Date.now(),
+  });
+}
+
+// Lädt den Read-Only-Cache der Schaltungs-Bibliothek aus IndexedDB
+export async function loadLibraryCacheRecord(
+  deps?: FileSystemDeps,
+): Promise<LibraryCacheRecord | null> {
+  const libraryStore = resolveLibraryStore(deps);
+  return libraryStore.getLibraryCache();
+}
+
+// Öffnet den System-Dateidialog zum Laden einer lokalen .lclib-Bibliotheksdatei (ohne lastProject zu überschreiben)
+export async function openLibraryFileWithPicker(
+  startInHandle?: FileSystemDirectoryHandleLike | null,
+  deps?: FileSystemDeps,
+): Promise<OpenProjectPickerResult> {
+  const win = resolvePickerWindow(deps);
+  if (!win || typeof win.showOpenFilePicker !== "function") {
+    return { kind: "unsupported" };
+  }
+
+  try {
+    const pickerTypes = getLibraryPickerTypes();
+    let handles: FileSystemFileHandleLike[];
+    try {
+      handles = await win.showOpenFilePicker({
+        multiple: false,
+        types: pickerTypes,
+        startIn: startInHandle ?? undefined,
+      });
+    } catch (firstError) {
+      if (isAbortError(firstError) || !startInHandle) {
+        throw firstError;
+      }
+      handles = await win.showOpenFilePicker({
+        multiple: false,
+        types: pickerTypes,
+      });
+    }
+
+    const fileHandle = handles[0];
+    if (!fileHandle) {
+      return { kind: "cancelled" };
+    }
+
+    const file = await fileHandle.getFile();
+    const content = await file.text();
+    return {
+      kind: "opened",
+      fileName: file.name || fileHandle.name,
+      content,
+      xmlText: content,
+      handle: fileHandle,
+    };
+  } catch (error) {
+    if (isAbortError(error)) {
+      return { kind: "cancelled" };
+    }
+    throw error;
+  }
+}
+
+// Speichert eine .lclib-Bibliotheksdatei über vorhandenes FileHandle oder per Save-Picker (ohne lastProject zu verändern)
+export async function saveLibraryFileWithFileSystem(
+  content: string,
+  suggestedName: string,
+  options?: {
+    existingHandle?: FileSystemFileHandleLike | null;
+    forceSaveAs?: boolean;
+    startInHandle?: FileSystemDirectoryHandleLike | null;
+  },
+  deps?: FileSystemDeps,
+): Promise<SaveProjectFileResult> {
+  return saveProjectFileWithFileSystem(
+    content,
+    suggestedName,
+    {
+      ...options,
+      types: getLibraryPickerTypes(),
+      persistLastProject: false,
+    },
+    deps,
+  );
 }

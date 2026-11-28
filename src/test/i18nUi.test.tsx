@@ -356,9 +356,7 @@ describe("T-063: Vollständige UI-Lokalisierung & Live-Sprachumschaltung", () =>
           connectedTabCount={connectedTabCount}
           error={null}
           isSharedWorkerSupported={true}
-          accessKey=""
-          onAccessKeyChange={noop}
-          onClearAccessKey={noop}
+          onOpenSettings={noop}
           onConnect={noop}
           onDisconnect={noop}
           onActivateThisTab={noop}
@@ -373,6 +371,7 @@ describe("T-063: Vollständige UI-Lokalisierung & Live-Sprachumschaltung", () =>
     expect(deOne).toContain("1 Tab (SharedWorker)");
     expect(deThree).toContain("3 Tabs (SharedWorker)");
     expect(deOne).toContain("Nutze für Logic Circuit Anfragen folgende SessionID: abc-123");
+    expect(deOne).toContain("Einstellungen…");
 
     await i18n.changeLanguage("en");
     const enOne = renderPopover(1);
@@ -381,6 +380,7 @@ describe("T-063: Vollständige UI-Lokalisierung & Live-Sprachumschaltung", () =>
     expect(enOne).toContain("1 tab (SharedWorker)");
     expect(enThree).toContain("3 tabs (SharedWorker)");
     expect(enOne).toContain("Use the following SessionID for Logic Circuit requests: abc-123");
+    expect(enOne).toContain("Settings…");
   });
 
   it("lokalisiert ComponentPalette inkl. Bitbreiten-Pluralisierung und Schaltungs-Button", async () => {

@@ -470,7 +470,7 @@ describe("T-043: Schwebender Paste-Zustand (Floating Paste) und Bearbeiten-Menü
     expect(xml).not.toContain("<lc:");
     expect(xml).toContain("CellShape=\"Rectangle\"");
     expect(xml).not.toContain("CellShape=\"Rect\"");
-    expect(xml).not.toContain(probeEntityId);
+    expect(xml).toContain(`CircuitProbeId="${probeEntityId}" Name="${probeEntityId}"`);
     expect(xml).toMatch(/<CircuitProbe CircuitProbeId="([0-9a-f-]+)" Name="\1"/i);
 
     const wroteSystemClipboard = await writeClipboardText(xml);

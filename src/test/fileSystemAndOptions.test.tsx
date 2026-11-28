@@ -31,6 +31,7 @@ import {
   loadLastProjectFromStorage,
   openProjectFileWithPicker,
   pickAndAddProjectDirectory,
+  queryHandlePermission,
   readFileFromDirectory,
   removeProjectDirectory,
   saveProjectFileWithFileSystem,
@@ -773,5 +774,242 @@ describe("T-050: File System Access API & Systemeinstellungen (DialogOptions)", 
     );
     expect(desktopSave.kind).toBe("saved");
     expect((await store.getLastProject())?.fileName).toBe("natives.lcweb");
+  });
+
+  it("bricht hängende queryPermission-, isSameEntry- und IndexedDB-Operationen per Timeout sauber ab", async () => {
+    const store = createMemoryHandleStore();
+
+    // Hängende queryPermission() blockiert listStoredDirectories() nicht dauerhaft
+    const hangingPermHandle: FileSystemDirectoryHandleLike = {
+      kind: "directory",
+      name: "StalledProjects",
+      queryPermission: () => new Promise<"granted" | "prompt" | "denied">(() => undefined),
+    };
+    const healthyHandle = createMockDirectoryHandle("HealthyProjects", { permission: "granted" });
+
+    await store.putDirectory({
+      id: "dir-stalled",
+      name: "StalledProjects",
+      handle: hangingPermHandle,
+      isDefault: true,
+      addedAt: 1,
+    });
+    await store.putDirectory({
+      id: "dir-healthy",
+      name: "HealthyProjects",
+      handle: healthyHandle,
+      isDefault: false,
+      addedAt: 2,
+    });
+
+    const listedWithTimeout = await listStoredDirectories({
+      store,
+      permissionQueryTimeoutMs: 30,
+    });
+    expect(listedWithTimeout).toHaveLength(2);
+    expect(listedWithTimeout[0].name).toBe("StalledProjects");
+    expect(listedWithTimeout[0].permission).toBe("prompt");
+    expect(listedWithTimeout[1].name).toBe("HealthyProjects");
+    expect(listedWithTimeout[1].permission).toBe("granted");
+
+    // Spät rejectendes queryPermission()-Promise nach Timeout erzeugt keine UnhandledRejection
+    const lateRejectHandle: FileSystemDirectoryHandleLike = {
+      kind: "directory",
+      name: "LateReject",
+      queryPermission: () => new Promise<"granted" | "prompt" | "denied">((_resolve, reject) => {
+        setTimeout(() => reject(new Error("late rejection")), 40);
+      }),
+    };
+    expect(await queryHandlePermission(lateRejectHandle, "readwrite", { timeoutMs: 10 })).toBe("prompt");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Hängende isSameEntry() blockiert addProjectDirectory() nicht
+    const hangingSameEntryHandle: FileSystemDirectoryHandleLike = {
+      kind: "directory",
+      name: "HangingSameEntry",
+      isSameEntry: () => new Promise<boolean>(() => undefined),
+      queryPermission: async () => "granted",
+    };
+    await store.putDirectory({
+      id: "dir-same-hang",
+      name: "HangingSameEntry",
+      handle: hangingSameEntryHandle,
+      isDefault: false,
+      addedAt: 3,
+    });
+    const addedAfterHang = await addProjectDirectory(
+      createMockDirectoryHandle("FreshDir", { permission: "granted" }),
+      { store, permissionQueryTimeoutMs: 30 },
+    );
+    expect(addedAfterHang.some((entry) => entry.name === "FreshDir")).toBe(true);
+
+    // Hängendes factory.open() läuft in Timeout, schließt verspätetes DB-Handle und blockiert Folge-Ops nicht
+    let lateOpenDbClosed = 0;
+    let openAttempt = 0;
+    const openTimeoutFactory = {
+      open() {
+        openAttempt++;
+        const currentAttempt = openAttempt;
+        const req: {
+          result: unknown;
+          onsuccess: (() => void) | null;
+          onerror: (() => void) | null;
+          onupgradeneeded: (() => void) | null;
+          onblocked: (() => void) | null;
+        } = {
+          result: null,
+          onsuccess: null,
+          onerror: null,
+          onupgradeneeded: null,
+          onblocked: null,
+        };
+
+        if (currentAttempt === 1) {
+          setTimeout(() => {
+            req.result = {
+              objectStoreNames: { contains: () => true },
+              createObjectStore: () => ({}),
+              onversionchange: null,
+              close: () => {
+                lateOpenDbClosed++;
+              },
+              transaction: () => ({}),
+            };
+            req.onsuccess?.();
+          }, 50);
+        } else {
+          queueMicrotask(() => {
+            req.result = {
+              objectStoreNames: { contains: () => true },
+              createObjectStore: () => ({}),
+              onversionchange: null,
+              close: () => undefined,
+              transaction: () => ({
+                oncomplete: null as (() => void) | null,
+                onerror: null,
+                onabort: null,
+                objectStore() {
+                  const tx = this as { oncomplete: (() => void) | null };
+                  return {
+                    getAll() {
+                      const getAllReq = {
+                        result: undefined as unknown,
+                        onsuccess: null as (() => void) | null,
+                        onerror: null,
+                      };
+                      queueMicrotask(() => {
+                        getAllReq.result = [
+                          {
+                            id: "recovered",
+                            name: "RecoveredDir",
+                            handle: healthyHandle,
+                            isDefault: true,
+                            addedAt: 1,
+                          },
+                        ];
+                        getAllReq.onsuccess?.();
+                        queueMicrotask(() => {
+                          tx.oncomplete?.();
+                        });
+                      });
+                      return getAllReq;
+                    },
+                  };
+                },
+              }),
+            };
+            req.onsuccess?.();
+          });
+        }
+        return req;
+      },
+    } as unknown as IDBFactory;
+
+    expect(
+      await listStoredDirectories({ win: { indexedDB: openTimeoutFactory }, idbTimeoutMs: 20 }),
+    ).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    expect(lateOpenDbClosed).toBe(1);
+
+    const recoveredAfterOpenTimeout = await listStoredDirectories({
+      win: { indexedDB: openTimeoutFactory },
+      idbTimeoutMs: 200,
+    });
+    expect(recoveredAfterOpenTimeout).toHaveLength(1);
+    expect(recoveredAfterOpenTimeout[0].name).toBe("RecoveredDir");
+
+    // Hängende Transaktion (ohne oncomplete/onerror/onabort) schließt DB und entsperrt die Queue
+    let stalledTxDbClosed = 0;
+    let txAttempt = 0;
+    const txTimeoutFactory = {
+      open() {
+        const req: {
+          result: unknown;
+          onsuccess: (() => void) | null;
+          onerror: (() => void) | null;
+          onupgradeneeded: (() => void) | null;
+          onblocked: (() => void) | null;
+        } = {
+          result: null,
+          onsuccess: null,
+          onerror: null,
+          onupgradeneeded: null,
+          onblocked: null,
+        };
+
+        queueMicrotask(() => {
+          txAttempt++;
+          const attempt = txAttempt;
+          req.result = {
+            objectStoreNames: { contains: () => true },
+            createObjectStore: () => ({}),
+            onversionchange: null,
+            close: () => {
+              if (attempt === 1) {
+                stalledTxDbClosed++;
+              }
+            },
+            transaction: () => {
+              const tx = {
+                oncomplete: null as (() => void) | null,
+                onerror: null,
+                onabort: null,
+                objectStore: () => ({
+                  getAll: () => {
+                    const getAllReq = {
+                      result: undefined as unknown,
+                      onsuccess: null as (() => void) | null,
+                      onerror: null,
+                    };
+                    if (attempt > 1) {
+                      queueMicrotask(() => {
+                        getAllReq.result = [];
+                        getAllReq.onsuccess?.();
+                        queueMicrotask(() => {
+                          tx.oncomplete?.();
+                        });
+                      });
+                    }
+                    return getAllReq;
+                  },
+                }),
+              };
+              return tx;
+            },
+          };
+          req.onsuccess?.();
+        });
+
+        return req;
+      },
+    } as unknown as IDBFactory;
+
+    expect(
+      await listStoredDirectories({ win: { indexedDB: txTimeoutFactory }, idbTimeoutMs: 25 }),
+    ).toEqual([]);
+    expect(stalledTxDbClosed).toBe(1);
+    expect(
+      await listStoredDirectories({ win: { indexedDB: txTimeoutFactory }, idbTimeoutMs: 200 }),
+    ).toEqual([]);
   });
 });

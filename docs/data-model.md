@@ -189,6 +189,8 @@ src/types/
     └── symbolMap.ts
 ```
 
+*(Hinweis: Der obige Baum zeigt die C#-Kernmodelle; weiterführende Web-Feature-Typen liegen thematisch geordnet in den Geschwisterverzeichnissen `collab/`, `find/`, `hdl/`, `history/`, `mcp/`, `settings/` und `storage/` sowie `synthesizer.ts` unter `circuit/`.)*
+
 Jede Datei exportiert genau ihren Typ als Default-Export:
 
 ```ts

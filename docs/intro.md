@@ -11,8 +11,16 @@
   Eigene Schaltungen können als wiederverwendbare Bausteine mit Pins in übergeordnete Schaltungen eingebettet werden.
 - **Echtzeit-Logiksimulation:**
   Deterministische oder eventbasierte Simulation digitaler Signale (Low, High, Undefined/Tri-State) mit Visualisierung von Signalzuständen entlang der Leitungen.
-- **Kompatibilität zur C#-Desktop-Version:**
-  Das Original-Projekt von Eugene Lepekhin dient als Referenz (`reference/LogicCircuit`). Es wird angestrebt, das XML-Projektformat von Logic Circuit lesen und schreiben zu können.
+- **Kompatibilität zur C#-Desktop-Version & natives Web-Format:**
+  Das Original-Projekt von Eugene Lepekhin dient als Referenz (`reference/LogicCircuit`). Neben dem nativen JSON-Projektformat (`*.lcweb`) unterstützt die Anwendung den vollständigen Import und normalisierten Export des XML-Projektformats (`*.CircuitProject`).
+- **Schaltungs-Bibliothek & Standard-ICs:**
+  Persistente Benutzer-Bibliothek (`*.lclib`) via File System Access API, integrierte Standard-ICs, umschaltbare Seitenleiste (`Projekt` ↔ `Bibliothek`) und isolierter Bibliotheks-Bearbeitungsmodus.
+- **Analyse, Oszilloskop & HDL-Export:**
+  Wahrheitstabelle im WebWorker (`Strg+T`), Verwendungsnachweis, Schaltungsbericht, interaktives Oszilloskop (`Strg+O`) sowie Export nach Verilog/SystemVerilog, VHDL und Nand2Tetris HDL.
+- **Model Context Protocol (MCP):**
+  Bidirektionale Streamable-HTTP-Bridge (`/mcp`) für KI-Assistenten – lokal über den Vite-Dev-Server oder remote über einen zustandslosen Node-22-Sidecar (`BYO SideCar`).
+- **WebRTC-Echtzeit-Kollaboration:**
+  Peer-to-Peer-Sessions mit 5-Minuten-Einladungslinks (*Host*, *Kollaborateur*, *Gast*), host-autoritativer Synchronisation, Soft-Locks, benutzerbezogenem Undo/Redo, Live-Präsenz und seiteneffektfreier lokaler Snapshot-Simulation mit Delta-Nachzug.
 
 ---
 
@@ -54,7 +62,7 @@ Die Steuerung des Entwicklungsfortschritts erfolgt über das zentrale Kanban-Boa
 - **`Progress`:**
   Der Task ist aktuell in aktiver Bearbeitung durch den Entwickler bzw. die KI.
 - **`Review` (Wichtig – Pflicht-Zwischenschritt):**
-  Sobald die technische Implementierung abgeschlossen ist und alle automatisierten Checks (`yarn errorcheck`, `yarn lint`, `yarn test`, `yarn build`) erfolgreich durchlaufen wurden, wechselt der Task **immer zuerst in den Status `Review` (niemals direkt in `Done`)**.
+  Sobald die technische Implementierung abgeschlossen ist und alle automatisierten Checks (`yarn errorcheck`, `yarn lint`, `yarn lint-docs`, `yarn test`, `yarn build`, `yarn build:pages`) erfolgreich durchlaufen wurden, wechselt der Task **immer zuerst in den Status `Review` (niemals direkt in `Done`)**.
   Die KI meldet die Fertigstellung und übergibt die Kontrolle zur Abnahme.
 - **`Done` / `Rejected`:**
   **Ausschließlich der leitende Entwickler (Nutzer)** entscheidet nach Prüfung, ob ein Task als fertig (`Done`) abgenommen wird oder Nacharbeiten (`Rejected`) erforderlich sind.

@@ -42,7 +42,7 @@ export function pushDelta(history: HistoryState, delta: CircuitDelta): HistorySt
 }
 
 // Fügt Symbole, Textnotizen und Leitungen inklusive ihrer Circuit-Entitäten in das Projekt ein
-function insertEntities(
+export function insertEntities(
   project: CircuitProject,
   logicalCircuitId: string,
   symbols: { symbol: CircuitSymbol; circuit: Circuit; pin?: Pin }[],
@@ -284,7 +284,7 @@ export function deleteEntities(
 }
 
 // Wendet Leitungs-Updates, Löschungen und Einfügungen in Vorwärtsrichtung an
-function applyWireModificationsForward(
+export function applyWireModificationsForward(
   project: CircuitProject,
   logicalCircuitId: string,
   wireChanges?: WireEndpointUpdate[],
@@ -384,7 +384,7 @@ function applyWireModificationsBackward(
 }
 
 // Ersetzt ein platziertes Symbol und seine zugehörige Circuit-Entität im Projekt
-function applySymbolSnapshot(
+export function applySymbolSnapshot(
   project: CircuitProject,
   targetId: string,
   snapshot: { symbol: CircuitSymbol; circuit: Circuit; pin?: Pin },
@@ -509,7 +509,7 @@ function applySymbolSnapshot(
 }
 
 // Überträgt einen LogicalCircuit-Snapshot (inkl. Symbolform, Erweiterter Platzierung & Pin-Indizes) auf das Projekt
-function applyLogicalCircuitSnapshot(
+export function applyLogicalCircuitSnapshot(
   project: CircuitProject,
   logicalCircuitId: string,
   snapshot: NonNullable<Extract<CircuitDelta, { type: "updateProperty" }>["afterLogicalCircuit"]>,

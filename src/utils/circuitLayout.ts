@@ -45,6 +45,7 @@ import type Wire from "../types/circuit/wire";
 
 import { clampSoundFrequency, SOUND_DEFAULT_FREQUENCY } from "./audioPitchTable";
 import { GRID_SIZE } from "./coordinateSystem";
+import { generateEntityUuid } from "./entityId";
 import {
   clampGraphicsArrayBitsPerPixel,
   clampGraphicsArrayDataBitWidth,
@@ -451,15 +452,14 @@ export function generateUniquePinName(
   return `${prefix}${counter}`;
 }
 
-// Ermittelt die Kurzbeschriftung eines Sub-Circuit-Pins (jamNotation mit Fallback auf Pin-Namen-Präfix)
+// Ermittelt die Kurzbeschriftung eines Sub-Circuit-Pins (leer = keine Beschriftung am Chip)
 export function getPinJamDisplayLabel(pin: BasePin): string {
   const sideMaxLen = pin.pinSide === "top" || pin.pinSide === "bottom" ? 4 : 2;
   const explicit = pin.jamNotation?.trim() ?? "";
-  if (explicit !== "") {
-    return explicit.slice(0, Math.max(sideMaxLen, Math.min(4, explicit.length)));
+  if (explicit === "") {
+    return "";
   }
-  const fallback = pin.name?.trim() ?? "";
-  return fallback.slice(0, sideMaxLen);
+  return explicit.slice(0, Math.max(sideMaxLen, Math.min(4, explicit.length)));
 }
 
 // Erzeugt einen Pin-Baustein (Ein- oder Ausgang einer LogicalCircuit) analog zu PinSet.Create in Pin.cs
@@ -1943,7 +1943,7 @@ export function createTextNote(
     lineHeights?: TextNoteLineHeight[];
   },
 ): TextNote {
-  const textNoteId = options?.textNoteId ?? `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const textNoteId = options?.textNoteId ?? generateEntityUuid();
   const lineHeight = options?.lineHeight ?? 18;
   const fontFamily = options?.fontFamily ?? "mono";
   const lineHeights = options?.lineHeights;
@@ -2535,7 +2535,7 @@ export function instantiateCircuitFromPalette(
     project.gates.set(circuit.circuitId, circuit as Gate);
     project.circuits.set(circuit.circuitId, circuit);
   } else if (selection.type === "ledMatrix") {
-    const matrixId = `matrix-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const matrixId = generateEntityUuid();
     const matrix = createLedMatrix(
       matrixId,
       selection.rows ?? 4,
@@ -2552,7 +2552,7 @@ export function instantiateCircuitFromPalette(
     project.ledMatrices.push(matrix);
     project.circuits.set(matrix.circuitId, matrix);
   } else if (selection.type === "button") {
-    const btnId = `btn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const btnId = generateEntityUuid();
     const notation = selection.notation !== undefined
       ? selection.notation
       : (selection.name && selection.name !== "Taster / Schalter" ? selection.name : "");
@@ -2580,7 +2580,7 @@ export function instantiateCircuitFromPalette(
     project.circuitButtons.push(btn);
     project.circuits.set(btn.circuitId, btn);
   } else if (selection.type === "constant") {
-    const constId = `const-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const constId = generateEntityUuid();
     const isHex = selection.isHex !== undefined ? selection.isHex : true;
     const constant = createConstant(
       constId,
@@ -2598,7 +2598,7 @@ export function instantiateCircuitFromPalette(
     project.constants.push(constant);
     project.circuits.set(constant.circuitId, constant);
   } else if (selection.type === "probe") {
-    const probeId = `probe-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const probeId = generateEntityUuid();
     const probeName = selection.notation !== undefined
       ? selection.notation.trim()
       : (selection.name && selection.name !== "Signal-Sonde (Probe)" ? selection.name : "");
@@ -2622,7 +2622,7 @@ export function instantiateCircuitFromPalette(
     project.circuitProbes.push(probe);
     project.circuits.set(probe.circuitId, probe);
   } else if (selection.type === "pinIn" || selection.type === "pin") {
-    const pinId = `pin-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const pinId = generateEntityUuid();
     const targetLc = project.logicalCircuits.find((lc) => lc.logicalCircuitId === logicalCircuitId);
     const existingPins = [
       ...project.pins.filter((p) => p.circuitId === logicalCircuitId),
@@ -2632,6 +2632,9 @@ export function instantiateCircuitFromPalette(
       ? selection.notation.trim()
       : (selection.name && selection.name !== "Pin (Eingang)" ? selection.name : "X");
     const pinName = generateUniquePinName(rawPinName, existingPins);
+    const resolvedJamNotation = selection.jamNotation !== undefined
+      ? selection.jamNotation
+      : (selection.notation !== undefined && selection.notation.trim() === "" ? "" : pinName);
     const { pin, pinCircuit } = createPinCircuit(
       pinId,
       logicalCircuitId,
@@ -2643,7 +2646,7 @@ export function instantiateCircuitFromPalette(
       0,
       selection.width ?? RESIZABLE_SYMBOL_MIN_GRID_SIZE,
       selection.height ?? RESIZABLE_SYMBOL_MIN_GRID_SIZE,
-      selection.jamNotation ?? "",
+      resolvedJamNotation,
     );
     if (selection.note !== undefined) {
       pin.note = selection.note;
@@ -2656,7 +2659,7 @@ export function instantiateCircuitFromPalette(
     }
     project.circuits.set(pinCircuit.circuitId, pinCircuit);
   } else if (selection.type === "pinOut") {
-    const pinId = `pin-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const pinId = generateEntityUuid();
     const targetLc = project.logicalCircuits.find((lc) => lc.logicalCircuitId === logicalCircuitId);
     const existingPins = [
       ...project.pins.filter((p) => p.circuitId === logicalCircuitId),
@@ -2666,6 +2669,9 @@ export function instantiateCircuitFromPalette(
       ? selection.notation.trim()
       : (selection.name && selection.name !== "Pin (Ausgang)" ? selection.name : "Q");
     const pinName = generateUniquePinName(rawPinName, existingPins);
+    const resolvedJamNotation = selection.jamNotation !== undefined
+      ? selection.jamNotation
+      : (selection.notation !== undefined && selection.notation.trim() === "" ? "" : pinName);
     const { pin, pinCircuit } = createPinCircuit(
       pinId,
       logicalCircuitId,
@@ -2677,7 +2683,7 @@ export function instantiateCircuitFromPalette(
       0,
       selection.width ?? RESIZABLE_SYMBOL_MIN_GRID_SIZE,
       selection.height ?? RESIZABLE_SYMBOL_MIN_GRID_SIZE,
-      selection.jamNotation ?? "",
+      resolvedJamNotation,
     );
     if (selection.note !== undefined) {
       pin.note = selection.note;
@@ -2690,7 +2696,7 @@ export function instantiateCircuitFromPalette(
     }
     project.circuits.set(pinCircuit.circuitId, pinCircuit);
   } else if (selection.type === "splitter") {
-    const splitterId = `splitter-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const splitterId = generateEntityUuid();
     const pinCount = selection.pinCount ?? 3;
     const pinBitWidth = selection.pinBitWidth ?? 1;
     const totalBitWidth = selection.bitWidth ?? pinCount * pinBitWidth;
@@ -2703,7 +2709,7 @@ export function instantiateCircuitFromPalette(
     project.splitters.push(splitter);
     project.circuits.set(splitter.circuitId, splitter);
   } else if (selection.type === "sensor") {
-    const sensorId = `sensor-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const sensorId = generateEntityUuid();
     const sensor = createSensor(
       sensorId,
       selection.sensorType ?? "random",
@@ -2717,7 +2723,7 @@ export function instantiateCircuitFromPalette(
     project.sensors.push(sensor);
     project.circuits.set(sensor.circuitId, sensor);
   } else if (selection.type === "rom" || selection.type === "ram") {
-    const memoryId = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const memoryId = generateEntityUuid();
     const writable = selection.type === "ram";
     const memory = createMemory(
       memoryId,
@@ -2736,7 +2742,7 @@ export function instantiateCircuitFromPalette(
     project.memories.push(memory);
     project.circuits.set(memory.circuitId, memory);
   } else if (selection.type === "sound") {
-    const soundId = `sound-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const soundId = generateEntityUuid();
     const sound = createSound(
       soundId,
       selection.pinSide ?? "left",
@@ -2749,7 +2755,7 @@ export function instantiateCircuitFromPalette(
     project.sounds.push(sound);
     project.circuits.set(sound.circuitId, sound);
   } else if (selection.type === "synthesizer") {
-    const synthesizerId = `synth-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const synthesizerId = generateEntityUuid();
     const synthesizer = createSynthesizer(
       synthesizerId,
       selection.synthesizerMode ?? "square",
@@ -2760,7 +2766,7 @@ export function instantiateCircuitFromPalette(
     project.synthesizers.push(synthesizer);
     project.circuits.set(synthesizer.circuitId, synthesizer);
   } else if (selection.type === "graphicsArray") {
-    const graphicsArrayId = `ga-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const graphicsArrayId = generateEntityUuid();
     const ga = createGraphicsArray(graphicsArrayId, {
       writeOn1: selection.writeOn1,
       onStart: selection.onStart,
@@ -2785,7 +2791,7 @@ export function instantiateCircuitFromPalette(
     circuit = { ...circuit, note: selection.note };
   }
 
-  const symbolId = `sym-${circuit.circuitId}-${gridPoint.x}-${gridPoint.y}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const symbolId = generateEntityUuid();
   const circuitSymbol = createCircuitSymbol(
     circuit,
     logicalCircuitId,

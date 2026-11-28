@@ -5,11 +5,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import CanvasContextProvider from "../contexts/canvasContext/provider";
 import CircuitContextProvider from "../contexts/circuitContext/provider";
+import CollabContext, { type CollabContextType } from "../contexts/collabContext";
 import SimulationContextProvider from "../contexts/simulationContext/provider";
 import useMcpBridge, {
+  guardMcpRequestForCollab,
   isMcpDisabledByEnv,
+  MCP_COLLAB_HOST_ONLY_ERROR,
   type McpBridgeController,
   type McpHotChannel,
+  syncMcpCollabLock,
 } from "../hooks/useMcpBridge";
 
 import type McpBridgeRequest from "../types/mcp/mcpBridgeRequest";
@@ -272,6 +276,29 @@ describe("McpRemoteClient (SharedWorker & Single-Tab-Fallback)", () => {
       "wss://circuit.example.com/ws-mcp",
     );
     expect(resolveRemoteWsUrl({ protocol: "http:", host: "localhost:5173" })).toBe("ws://localhost:5173/ws-mcp");
+    expect(resolveRemoteWsUrl("http://localhost:3001/")).toBe("ws://localhost:3001/ws-mcp");
+    expect(resolveRemoteWsUrl("https://sidecar.example.com")).toBe("wss://sidecar.example.com/ws-mcp");
+
+    const seenWsUrls: Array<string | undefined> = [];
+    const customRouter = new McpRemoteRouter({
+      resolveWsUrl: (sidecarBaseUrl) => resolveRemoteWsUrl(sidecarBaseUrl ?? "http://localhost:3001"),
+      socketFactory: (callbacks) => {
+        seenWsUrls.push(callbacks.wsUrl);
+        return createFakeSocketHarness().socketFactory(callbacks);
+      },
+      heartbeatIntervalMs: 0,
+    });
+    const customTab = createFakeTabPort();
+    customRouter.registerTab("tab-custom", customTab.port);
+    customRouter.connect("tab-custom", "k1", "http://localhost:3001");
+    expect(seenWsUrls[0]).toBe("ws://localhost:3001/ws-mcp");
+    expect(customTab.latestState()?.sidecarBaseUrl).toBe("http://localhost:3001");
+
+    // Wechsel der Sidecar-URL öffnet neue WebSocket-Verbindung gegen das neue Ziel
+    customRouter.connect("tab-custom", "k1", "https://sidecar.example.com");
+    expect(seenWsUrls[1]).toBe("wss://sidecar.example.com/ws-mcp");
+    expect(customTab.latestState()?.sidecarBaseUrl).toBe("https://sidecar.example.com");
+    customRouter.disconnect();
 
     const sharedHarness = createFakeSocketHarness();
     const sharedRouter = new McpRemoteRouter({
@@ -441,5 +468,136 @@ describe("useMcpBridge (Vorrang für lokales Development)", () => {
         process.env.DISABLE_MCP = prevDisableEnv;
       }
     }
+  });
+
+  it("sperrt MCP deterministisch für Nicht-Hosts während aktiver Kollaboration und gibt es nach Host-Übernahme oder Session-Ende frei", () => {
+    const blockedResponse = guardMcpRequestForCollab(true, {
+      id: "req-1",
+      method: "get_circuit_summary",
+      params: {},
+    });
+    expect(blockedResponse).toEqual({
+      id: "req-1",
+      error: MCP_COLLAB_HOST_ONLY_ERROR,
+    });
+    expect(guardMcpRequestForCollab(false, {
+      id: "req-2",
+      method: "get_circuit_summary",
+      params: {},
+    })).toBeNull();
+
+    const disconnectMock = vi.fn();
+    expect(syncMcpCollabLock(true, { disconnect: disconnectMock }, "connected")).toBe(true);
+    expect(disconnectMock).toHaveBeenCalledTimes(1);
+    expect(syncMcpCollabLock(true, { disconnect: disconnectMock }, "off")).toBe(false);
+    expect(syncMcpCollabLock(false, { disconnect: disconnectMock }, "connected")).toBe(false);
+
+    const createCollabStub = (isMcpBlockedByCollab: boolean): CollabContextType => ({
+      isDisabled: false,
+      customSidecarRequired: false,
+      isInSession: true,
+      transportState: "connected",
+      diagnostic: { code: "none", isRecoverable: true, turnPlannedHint: false, details: "" },
+      gracePeriodMs: 15000,
+      sessionId: "sess-1",
+      selfPeerId: "peer-1",
+      selfRole: isMcpBlockedByCollab ? "guest" : "host",
+      hostPeerId: isMcpBlockedByCollab ? "peer-host" : "peer-1",
+      isHost: !isMcpBlockedByCollab,
+      isMcpBlockedByCollab,
+      activeSidecarUrl: null,
+      isEphemeralSidecar: false,
+      runtimeConfig: null,
+      displayName: "Tester",
+      participants: [],
+      selfParticipant: null,
+      raisedHandCount: 0,
+      activeInvites: [],
+      pendingInviteLink: null,
+      lastError: null,
+      lastRejectionMessage: null,
+      sessionClosedNotice: null,
+      isParticipantsPanelOpen: false,
+      startHostSession: async () => false,
+      joinSession: async () => false,
+      endOrLeaveSession: () => {},
+      createInviteLink: async () => null,
+      revokeInviteLink: async () => false,
+      setParticipantRole: async () => false,
+      moderateParticipantName: async () => false,
+      renameSelf: async () => false,
+      toggleHandRaised: async () => false,
+      lowerParticipantHand: async () => false,
+      kickParticipant: async () => false,
+      transferHostRole: () => false,
+      requestResync: async () => false,
+      setParticipantsPanelOpen: () => {},
+      clearPendingInviteLink: () => {},
+      clearError: () => {},
+      dismissSessionClosedNotice: () => {},
+    });
+
+    const remoteClient = new McpRemoteClient({ useSharedWorker: false });
+    const connectSpy = vi.spyOn(remoteClient, "connect");
+    const claimSpy = vi.spyOn(remoteClient, "claimActiveTab");
+
+    let guestController: McpBridgeController | null = null;
+    let hostController: McpBridgeController | null = null;
+
+    const Probe: React.FC<{ onResult: (ctrl: McpBridgeController) => void }> = ({ onResult }) => {
+      onResult(useMcpBridge({ hotOverride: null, remoteClientFactory: () => remoteClient }));
+      return null;
+    };
+
+    renderToStaticMarkup(
+      React.createElement(
+        CircuitContextProvider,
+        null,
+        React.createElement(
+          SimulationContextProvider,
+          null,
+          React.createElement(
+            CanvasContextProvider,
+            null,
+            React.createElement(
+              CollabContext.Provider,
+              { value: createCollabStub(true) },
+              React.createElement(Probe, { onResult: (ctrl) => { guestController = ctrl; } }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(guestController!.isBlockedByCollab).toBe(true);
+    expect(guestController!.error).toBe(MCP_COLLAB_HOST_ONLY_ERROR);
+    guestController!.connect("key");
+    guestController!.activateThisTab();
+    expect(connectSpy).not.toHaveBeenCalled();
+    expect(claimSpy).not.toHaveBeenCalled();
+
+    // Nach Host-Übernahme (oder Session-Ende) ist MCP wieder freigegeben
+    renderToStaticMarkup(
+      React.createElement(
+        CircuitContextProvider,
+        null,
+        React.createElement(
+          SimulationContextProvider,
+          null,
+          React.createElement(
+            CanvasContextProvider,
+            null,
+            React.createElement(
+              CollabContext.Provider,
+              { value: createCollabStub(false) },
+              React.createElement(Probe, { onResult: (ctrl) => { hostController = ctrl; } }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(hostController!.isBlockedByCollab).toBe(false);
+    expect(hostController!.error).toBeNull();
   });
 });

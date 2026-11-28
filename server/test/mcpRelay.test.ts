@@ -1,9 +1,5 @@
-import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import net from "node:net";
-import path from "node:path";
-import readline from "node:readline";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -20,6 +16,7 @@ import {
   MCP_EVENT_RESPONSE,
   MCP_HTTP_BASE_PATH,
   MCP_PRIVACY_PATH,
+  MCP_STREAMABLE_HTTP_PATH,
   MCP_WS_PATH,
 } from "../../src/mcp/mcpEvents.ts";
 
@@ -31,9 +28,6 @@ import McpRelay, {
   UnknownSessionError,
 } from "../mcpRelay.ts";
 import { createStandaloneServer, type StandaloneServerHandle } from "../standaloneServer.ts";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CLI_PATH = path.resolve(__dirname, "../bin/mcpCli.mjs");
 
 function createFakeBridgeChannel(): {
   channel: McpWebSocketChannel;
@@ -390,7 +384,7 @@ describe("McpRelay (zustandsloses Multi-Session-RAM-Relay)", () => {
   });
 });
 
-describe("StandaloneServer + WebSocket + mcpCli.mjs End-to-End", () => {
+describe("StandaloneServer + WebSocket + Streamable HTTP (/mcp) End-to-End", () => {
   const activeServers: StandaloneServerHandle[] = [];
 
   afterEach(async () => {
@@ -402,7 +396,7 @@ describe("StandaloneServer + WebSocket + mcpCli.mjs End-to-End", () => {
     }
   });
 
-  it("schützt HTTP/WS per Access-Key & Origin und vermittelt Stdio-Calls von mcpCli.mjs an den Browser", async () => {
+  it("schützt HTTP/WS per Access-Key & Origin und vermittelt Streamable-HTTP-Calls an den Browser", async () => {
     const server = await createStandaloneServer({
       host: "127.0.0.1",
       port: 0,
@@ -424,15 +418,39 @@ describe("StandaloneServer + WebSocket + mcpCli.mjs End-to-End", () => {
       activeSessions: 0,
       pendingRequests: 0,
       authRequired: true,
+      serverVersion: expect.any(String),
     });
 
-    // Unautorisierter HTTP-Aufruf -> 401
-    const unauthRes = await fetch(`${baseUrl}${MCP_HTTP_BASE_PATH}/call`, {
+    // Legacy-Endpunkt POST /__mcp/call ist vollständig entfernt
+    const legacyCallRes = await fetch(`${baseUrl}${MCP_HTTP_BASE_PATH}/call`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer top-secret-key",
+      },
       body: JSON.stringify({ method: "get_circuit_summary" }),
     });
+    expect(legacyCallRes.status).toBe(404);
+
+    // Unautorisierter HTTP-Aufruf auf /mcp -> 401
+    const unauthRes = await fetch(`${baseUrl}${MCP_STREAMABLE_HTTP_PATH}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
     expect(unauthRes.status).toBe(401);
+
+    // GET auf /mcp -> 405 Method Not Allowed
+    const getRes = await fetch(`${baseUrl}${MCP_STREAMABLE_HTTP_PATH}`, {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer top-secret-key",
+      },
+    });
+    expect(getRes.status).toBe(405);
 
     // Unerlaubter Origin beim WS-Upgrade wird abgewiesen
     await expect(connectRawWsClient(server.port, "https://evil.example")).rejects.toThrow(/403/);
@@ -457,66 +475,78 @@ describe("StandaloneServer + WebSocket + mcpCli.mjs End-to-End", () => {
     const pongEnv = await wsClient.nextEnvelope();
     expect(pongEnv.event).toBe(MCP_EVENT_PONG);
 
-    // Echter mcpCli.mjs-Prozess über Stdio im Remote-Modus (ohne LOGIC_CIRCUIT_SESSION in Env)
-    const cli = spawn("node", [CLI_PATH], {
-      env: {
-        ...process.env,
-        LOGIC_CIRCUIT_URL: baseUrl,
-        LOGIC_CIRCUIT_REMOTE: "1",
-        LOGIC_CIRCUIT_TOKEN: "top-secret-key",
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    const rl = readline.createInterface({ input: cli.stdout });
-    const pendingLines: Array<(line: string) => void> = [];
-    const lineBuffer: string[] = [];
-    rl.on("line", (line) => {
-      const waiter = pendingLines.shift();
-      if (waiter) {
-        waiter(line);
-      } else {
-        lineBuffer.push(line);
+    const mcpEndpoint = `${baseUrl}${MCP_STREAMABLE_HTTP_PATH}`;
+    const postMcp = async (body: unknown, mcpSessionId?: string) => {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: "Bearer top-secret-key",
+      };
+      if (mcpSessionId) {
+        headers["Mcp-Session-Id"] = mcpSessionId;
       }
-    });
-
-    const sendRpc = async (msg: unknown): Promise<Record<string, unknown>> => {
-      cli.stdin.write(`${JSON.stringify(msg)}\n`);
-      const raw = lineBuffer.shift() ?? await new Promise<string>((res) => pendingLines.push(res));
-      return JSON.parse(raw) as Record<string, unknown>;
+      const res = await fetch(mcpEndpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      return {
+        status: res.status,
+        sessionHeader: res.headers.get("mcp-session-id"),
+        json: res.status === 202 ? null : (await res.json()) as Record<string, unknown>,
+      };
     };
 
     try {
-      const listResp = await sendRpc({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
-      const tools = ((listResp.result as { tools: Array<{ name: string }> }).tools).map((t) => t.name);
+      const initRes = await postMcp({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18" },
+      });
+      expect(initRes.status).toBe(200);
+      expect(initRes.sessionHeader).toBeTruthy();
+      const mcpSessionId = initRes.sessionHeader as string;
+
+      const listRes = await postMcp({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, mcpSessionId);
+      const tools = ((listRes.json?.result as { tools: Array<{ name: string }> }).tools).map((t) => t.name);
       expect(tools[0]).toBe("set_remote_session");
       expect(tools).toContain("get_circuit_summary");
 
       // Aufruf ohne vorher gesetzte SessionID muss gezielt fehlschlagen
-      const missingResp = await sendRpc({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/call",
-        params: { name: "get_circuit_summary", arguments: {} },
-      });
-      expect((missingResp.result as { isError?: boolean }).isError).toBe(true);
+      const missingRes = await postMcp(
+        {
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: { name: "get_circuit_summary", arguments: {} },
+        },
+        mcpSessionId,
+      );
+      expect((missingRes.json?.result as { isError?: boolean }).isError).toBe(true);
 
       // SessionID über set_remote_session setzen
-      const setResp = await sendRpc({
-        jsonrpc: "2.0",
-        id: 3,
-        method: "tools/call",
-        params: { name: "set_remote_session", arguments: { sessionId } },
-      });
-      expect((setResp.result as { isError?: boolean }).isError).toBeUndefined();
+      const setRes = await postMcp(
+        {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "set_remote_session", arguments: { sessionId } },
+        },
+        mcpSessionId,
+      );
+      expect((setRes.json?.result as { isError?: boolean }).isError).toBeUndefined();
 
-      // Werkzeugaufruf wird über HTTP -> Relay -> WebSocket zugestellt
-      const callPromise = sendRpc({
-        jsonrpc: "2.0",
-        id: 4,
-        method: "tools/call",
-        params: { name: "get_circuit_summary", arguments: {} },
-      });
+      // Werkzeugaufruf wird über Streamable HTTP -> Relay -> WebSocket zugestellt
+      const callPromise = postMcp(
+        {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "tools/call",
+          params: { name: "get_circuit_summary", arguments: {} },
+        },
+        mcpSessionId,
+      );
 
       const reqEnv = await wsClient.nextEnvelope();
       expect(reqEnv.event).toBe(MCP_EVENT_REQUEST);
@@ -529,15 +559,19 @@ describe("StandaloneServer + WebSocket + mcpCli.mjs End-to-End", () => {
       });
 
       const toolResp = await callPromise;
-      const content = (toolResp.result as { content: Array<{ text: string }> }).content;
+      const content = (toolResp.json?.result as { content: Array<{ text: string }> }).content;
       expect(JSON.parse(content[0].text)).toEqual({ currentCircuitId: "main", remoteOk: true });
-    } finally {
-      rl.close();
-      cli.stdin.end();
-      wsClient.close();
-      await new Promise<void>((res) => {
-        cli.once("exit", () => res());
+
+      const deleteRes = await fetch(mcpEndpoint, {
+        method: "DELETE",
+        headers: {
+          Authorization: "Bearer top-secret-key",
+          "Mcp-Session-Id": mcpSessionId,
+        },
       });
+      expect(deleteRes.status).toBe(204);
+    } finally {
+      wsClient.close();
     }
   });
 

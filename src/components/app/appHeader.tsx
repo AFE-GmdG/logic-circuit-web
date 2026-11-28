@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 
 import CanvasContext from "../../contexts/canvasContext";
 import CircuitContext from "../../contexts/circuitContext";
+import CollabContext from "../../contexts/collabContext";
+import LibraryContext from "../../contexts/libraryContext";
 import SimulationContext from "../../contexts/simulationContext";
 
 import { isTestable } from "../../simulation/truthTable/circuitTestSocket";
@@ -34,6 +36,11 @@ import {
   downloadDesktopProjectXml,
   serializeCircuitProjectToXml,
 } from "../../utils/xml/logicCircuitXmlWriter";
+import JoinCollabSessionDialog from "../collab/joinCollabSessionDialog";
+import StartCollabSessionDialog, {
+  OPEN_JOIN_COLLAB_DIALOG_EVENT,
+  OPEN_START_COLLAB_DIALOG_EVENT,
+} from "../collab/startCollabSessionDialog";
 
 import PropertyDialog from "../propertyDialog";
 import ConfirmDialog from "./confirmDialog";
@@ -41,11 +48,12 @@ import ExportHdlDialog from "./exportHdlDialog";
 import ExportImageDialog from "./exportImageDialog";
 import HelpDialog from "./helpDialog";
 import MainMenu from "./mainMenu";
-import OptionsDialog from "./optionsDialog";
+import OptionsDialog, { OPEN_OPTIONS_DIALOG_EVENT, type OptionsDialogTab } from "./optionsDialog";
 import OscilloscopeDialog from "./oscilloscopeDialog";
-import PrivacyDialog from "./privacyDialog";
+import PrivacyDialog, { OPEN_PRIVACY_DIALOG_EVENT } from "./privacyDialog";
 import ProjectDialog from "./projectDialog";
 import ReportDialog from "./reportDialog";
+import SidecarDownloadDialog, { OPEN_SIDECAR_DOWNLOAD_EVENT } from "./sidecarDownloadDialog";
 import TruthTableDialog from "./truthTableDialog";
 import UsageDialog from "./usageDialog";
 
@@ -59,10 +67,21 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   const { isSimulating, isPaused, isRunning } = simulationContext;
   const canvasContext = React.useContext(CanvasContext);
   const circuitContext = React.useContext(CircuitContext);
+  const collabContext = React.useContext(CollabContext);
+  const libraryContext = React.useContext(LibraryContext);
   const currentCircuit = circuitContext?.currentCircuit;
+  const isEditingLibrary = libraryContext?.isEditingLibrary ?? false;
+  const isCollabInSharedProject = Boolean(collabContext?.isInSession && !isEditingLibrary);
+  const isCollabReadOnly = Boolean(
+    isCollabInSharedProject &&
+    (collabContext?.modelSyncState?.isReadOnlyForGuest || collabContext?.modelSyncState?.isQuiesced),
+  );
+  const isCollabNonHost = Boolean(isCollabInSharedProject && !collabContext?.isHost);
   const canUndo = circuitContext?.canUndo ?? false;
   const canRedo = circuitContext?.canRedo ?? false;
   const historyCount = circuitContext?.history?.entries.length ?? 0;
+
+  const [confirmExitLibraryMode, setConfirmExitLibraryMode] = React.useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [isEditingCircuit, setIsEditingCircuit] = React.useState(false);
@@ -70,7 +89,10 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = React.useState(false);
   const [isExportHdlOpen, setIsExportHdlOpen] = React.useState(false);
   const [isExportImageOpen, setIsExportImageOpen] = React.useState(false);
-  const [isOptionsOpen, setIsOptionsOpen] = React.useState(false);
+  const [optionsTab, setOptionsTab] = React.useState<OptionsDialogTab | null>(null);
+  const [isSidecarDownloadOpen, setIsSidecarDownloadOpen] = React.useState(false);
+  const [isStartCollabOpen, setIsStartCollabOpen] = React.useState(false);
+  const [isJoinCollabOpen, setIsJoinCollabOpen] = React.useState(false);
   const [isPrivacyOpen, setIsPrivacyOpen] = React.useState(false);
   const [isHelpOpen, setIsHelpOpen] = React.useState(false);
   const [isUsageOpen, setIsUsageOpen] = React.useState(false);
@@ -82,8 +104,51 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   >(null);
   const [desktopExportWarnings, setDesktopExportWarnings] = React.useState<DesktopExportWarning[] | null>(null);
   const [importError, setImportError] = React.useState<string | null>(null);
+  const [isFilePickerOpen, setIsFilePickerOpen] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const fallbackFocusCleanupRef = React.useRef<(() => void) | null>(null);
   const hamburgerButtonRef = React.useRef<HTMLButtonElement | null>(null);
+
+  // Reagiert auf globale Anforderungen zum Öffnen von Sidecar-Download- oder Einstellungsdialog (z. B. aus StatusBar)
+  React.useEffect(
+    () => {
+      const handleOpenSidecarDownload = () => {
+        setIsSidecarDownloadOpen(true);
+      };
+
+      const handleOpenOptionsDialog = (event: Event) => {
+        const tab = (event as CustomEvent<{ tab?: OptionsDialogTab }>).detail?.tab ?? "general";
+        setIsSidecarDownloadOpen(false);
+        setOptionsTab(tab);
+      };
+
+      const handleOpenStartCollab = () => {
+        setIsStartCollabOpen(true);
+      };
+
+      const handleOpenJoinCollab = () => {
+        setIsJoinCollabOpen(true);
+      };
+
+      const handleOpenPrivacy = () => {
+        setIsPrivacyOpen(true);
+      };
+
+      window.addEventListener(OPEN_SIDECAR_DOWNLOAD_EVENT, handleOpenSidecarDownload);
+      window.addEventListener(OPEN_OPTIONS_DIALOG_EVENT, handleOpenOptionsDialog);
+      window.addEventListener(OPEN_START_COLLAB_DIALOG_EVENT, handleOpenStartCollab);
+      window.addEventListener(OPEN_JOIN_COLLAB_DIALOG_EVENT, handleOpenJoinCollab);
+      window.addEventListener(OPEN_PRIVACY_DIALOG_EVENT, handleOpenPrivacy);
+      return () => {
+        window.removeEventListener(OPEN_SIDECAR_DOWNLOAD_EVENT, handleOpenSidecarDownload);
+        window.removeEventListener(OPEN_OPTIONS_DIALOG_EVENT, handleOpenOptionsDialog);
+        window.removeEventListener(OPEN_START_COLLAB_DIALOG_EVENT, handleOpenStartCollab);
+        window.removeEventListener(OPEN_JOIN_COLLAB_DIALOG_EVENT, handleOpenJoinCollab);
+        window.removeEventListener(OPEN_PRIVACY_DIALOG_EVENT, handleOpenPrivacy);
+      };
+    },
+    [],
+  );
 
   // Schließt Bearbeitungsdialoge und offenes Menü beim Start sowie Oszilloskop beim Ende der Simulation
   React.useEffect(
@@ -119,6 +184,87 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
     (currentCircuit?.circuitSymbols.length ?? 0) > 0 ||
     (currentCircuit?.wires.length ?? 0) > 0;
 
+  const clearFallbackFocusGuard = React.useCallback(
+    () => {
+      fallbackFocusCleanupRef.current?.();
+      fallbackFocusCleanupRef.current = null;
+    },
+    [],
+  );
+
+  React.useEffect(
+    () => () => clearFallbackFocusGuard(),
+    [clearFallbackFocusGuard],
+  );
+
+  const setHostProjectLoading = collabContext?.setHostProjectLoading;
+  const isHostProjectLoadingActive = Boolean(
+    collabContext?.isInSession &&
+    collabContext.isHost &&
+    !isEditingLibrary &&
+    (isFilePickerOpen || confirmKind === "import-project"),
+  );
+
+  // Sperrt die Session für Teilnehmer, solange der Host den Datei-Öffnen-Dialog oder dessen Rückfrage nutzt
+  React.useEffect(
+    () => {
+      setHostProjectLoading?.(isHostProjectLoadingActive);
+      return () => {
+        if (isHostProjectLoadingActive) {
+          setHostProjectLoading?.(false);
+        }
+      };
+    },
+    [isHostProjectLoadingActive, setHostProjectLoading],
+  );
+
+  // Schließt den Lade-Overlay-Zustand auch dann zuverlässig, wenn der native Datei-Dialog abgebrochen wird
+  React.useEffect(
+    () => {
+      const input = fileInputRef.current;
+      if (!input) {
+        return undefined;
+      }
+      const handleCancel = () => {
+        clearFallbackFocusGuard();
+        setIsFilePickerOpen(false);
+      };
+      input.addEventListener("cancel", handleCancel);
+      return () => input.removeEventListener("cancel", handleCancel);
+    },
+    [clearFallbackFocusGuard],
+  );
+
+  const openFallbackFileInput = React.useCallback(
+    () => {
+      clearFallbackFocusGuard();
+      setIsFilePickerOpen(true);
+      if (typeof window !== "undefined") {
+        let timerId: ReturnType<typeof setTimeout> | null = null;
+        const handleWindowFocus = () => {
+          window.removeEventListener("focus", handleWindowFocus);
+          timerId = setTimeout(() => {
+            timerId = null;
+            fallbackFocusCleanupRef.current = null;
+            if ((fileInputRef.current?.files?.length ?? 0) === 0) {
+              setIsFilePickerOpen(false);
+            }
+          }, 400);
+        };
+        window.addEventListener("focus", handleWindowFocus);
+        fallbackFocusCleanupRef.current = () => {
+          window.removeEventListener("focus", handleWindowFocus);
+          if (timerId !== null) {
+            clearTimeout(timerId);
+            timerId = null;
+          }
+        };
+      }
+      fileInputRef.current?.click();
+    },
+    [clearFallbackFocusGuard],
+  );
+
   const handleOpenProjectFromSystem = React.useCallback(
     async () => {
       if (isSimulating || !circuitContext?.importProjectFromText) {
@@ -126,10 +272,12 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
       }
 
       if (!isFileSystemAccessSupported()) {
-        fileInputRef.current?.click();
+        openFallbackFileInput();
         return;
       }
 
+      let handedOffToFallback = false;
+      setIsFilePickerOpen(true);
       try {
         const defaultDir = await getDefaultDirectoryHandle();
         const result = await openProjectFileWithPicker(defaultDir?.handle ?? null);
@@ -142,7 +290,8 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           return;
         }
         if (result.kind === "unsupported") {
-          fileInputRef.current?.click();
+          handedOffToFallback = true;
+          openFallbackFileInput();
         }
       } catch (err) {
         setImportError(
@@ -150,18 +299,23 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
             ? err.message
             : t("header.errors.loadFailed"),
         );
+      } finally {
+        if (!handedOffToFallback) {
+          setIsFilePickerOpen(false);
+        }
       }
     },
     [
       circuitContext,
       isSimulating,
+      openFallbackFileInput,
       t,
     ],
   );
 
   const handleRequestImportProject = React.useCallback(
     () => {
-      if (isSimulating) {
+      if (isSimulating || isEditingLibrary || isCollabNonHost) {
         return;
       }
       if (hasUnsavedChanges) {
@@ -173,13 +327,15 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
     [
       handleOpenProjectFromSystem,
       hasUnsavedChanges,
+      isCollabNonHost,
+      isEditingLibrary,
       isSimulating,
     ],
   );
 
   const handleRequestNewProject = React.useCallback(
     () => {
-      if (isSimulating) {
+      if (isSimulating || isEditingLibrary || isCollabNonHost) {
         return;
       }
       if (hasUnsavedChanges) {
@@ -192,13 +348,15 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
     [
       circuitContext,
       hasUnsavedChanges,
+      isCollabNonHost,
+      isEditingLibrary,
       isSimulating,
     ],
   );
 
   const handleRequestLoadDemo = React.useCallback(
     () => {
-      if (isSimulating) {
+      if (isSimulating || isEditingLibrary || isCollabNonHost) {
         return;
       }
       if (hasUnsavedChanges) {
@@ -211,13 +369,15 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
     [
       circuitContext,
       hasUnsavedChanges,
+      isCollabNonHost,
+      isEditingLibrary,
       isSimulating,
     ],
   );
 
   const handleRequestDeleteCurrentCircuit = React.useCallback(
     () => {
-      if (isSimulating || !canDeleteCurrentCircuit || !currentCircuit) {
+      if (isSimulating || isEditingLibrary || isCollabReadOnly || !canDeleteCurrentCircuit || !currentCircuit) {
         return;
       }
       setConfirmKind("delete-circuit");
@@ -225,6 +385,8 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
     [
       canDeleteCurrentCircuit,
       currentCircuit,
+      isCollabReadOnly,
+      isEditingLibrary,
       isSimulating,
     ],
   );
@@ -232,8 +394,11 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   const handleConfirmAction = React.useCallback(
     () => {
       const kind = confirmKind;
+      if (kind === "import-project") {
+        void handleOpenProjectFromSystem();
+      }
       setConfirmKind(null);
-      if (!kind) {
+      if (!kind || kind === "import-project") {
         return;
       }
 
@@ -243,8 +408,6 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
       } else if (kind === "demo-project") {
         circuitContext?.resetToDemoProject();
         setImportError(null);
-      } else if (kind === "import-project") {
-        void handleOpenProjectFromSystem();
       } else if (kind === "delete-circuit" && currentCircuit) {
         try {
           circuitContext?.deleteCircuits([currentCircuit.logicalCircuitId]);
@@ -267,30 +430,39 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
 
   const handleImportFileChange = React.useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (!file || !circuitContext?.importProjectFromText) {
-        return;
-      }
-
-      if (!isSupportedProjectFile(file.name)) {
-        setImportError(t("header.errors.invalidProjectFileType"));
-        return;
-      }
-
       try {
-        const content = await readProjectFileText(file);
-        circuitContext.importProjectFromText(content, { fileName: file.name });
-        setImportError(null);
-      } catch (err) {
-        setImportError(
-          err instanceof Error
-            ? err.message
-            : t("header.errors.loadFailed"),
-        );
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file || !circuitContext?.importProjectFromText) {
+          return;
+        }
+
+        if (!isSupportedProjectFile(file.name)) {
+          setImportError(t("header.errors.invalidProjectFileType"));
+          return;
+        }
+
+        try {
+          const content = await readProjectFileText(file);
+          circuitContext.importProjectFromText(content, { fileName: file.name });
+          setImportError(null);
+        } catch (err) {
+          setImportError(
+            err instanceof Error
+              ? err.message
+              : t("header.errors.loadFailed"),
+          );
+        }
+      } finally {
+        clearFallbackFocusGuard();
+        setIsFilePickerOpen(false);
       }
     },
-    [circuitContext, t],
+    [
+      circuitContext,
+      clearFallbackFocusGuard,
+      t,
+    ],
   );
 
   const getProjectForExport = React.useCallback(
@@ -315,7 +487,17 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
   );
 
   const handleSaveProjectWithMode = React.useCallback(
-    async (forceSaveAs: boolean) => {
+    async (forceSaveAs: boolean): Promise<boolean> => {
+      if (isEditingLibrary && !forceSaveAs && libraryContext) {
+        const ok = await libraryContext.saveLibraryEditSession();
+        if (!ok) {
+          setImportError(libraryContext.libraryError ?? t("library.errors.saveFailed"));
+        } else {
+          setImportError(null);
+        }
+        return ok;
+      }
+
       // Laufende persistente RAMs (onStart === "data") vor dem Export aus dem Worker zurückschreiben
       if (simulationContext.isSimulating) {
         await simulationContext.flushPersistentMemories();
@@ -323,14 +505,14 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
 
       const projectToSave = getProjectForExport();
       if (!circuitContext || !projectToSave) {
-        return;
+        return false;
       }
 
       if (!isFileSystemAccessSupported()) {
         downloadNativeProject(projectToSave);
         circuitContext.markProjectSaved();
         setImportError(null);
-        return;
+        return true;
       }
 
       try {
@@ -350,20 +532,27 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           circuitContext.setActiveFileHandle(saveResult.handle, saveResult.fileName);
           circuitContext.markProjectSaved();
           setImportError(null);
-        } else if (saveResult.kind === "fallback-required") {
+          return true;
+        }
+        if (saveResult.kind === "fallback-required") {
           downloadNativeProject(projectToSave);
           circuitContext.markProjectSaved();
           setImportError(null);
+          return true;
         }
+        return false;
       } catch (err) {
         setImportError(
           err instanceof Error ? err.message : t("header.errors.saveFailed"),
         );
+        return false;
       }
     },
     [
       circuitContext,
       getProjectForExport,
+      isEditingLibrary,
+      libraryContext,
       simulationContext,
       t,
     ],
@@ -601,7 +790,7 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
       <div className="center-section">
         {currentCircuit && (
           <div
-            className={`active-circuit-display${!isSimulating ? " editable" : ""}`}
+            className={`active-circuit-display${!isSimulating ? " editable" : ""}${isEditingLibrary ? " library-edit" : ""}`}
             aria-label={t("header.activeCircuitAriaLabel")}
             data-testid="active-circuit-display"
             onDoubleClick={handleCircuitDoubleClick}
@@ -610,19 +799,52 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
             tabIndex={!isSimulating ? 0 : undefined}
           >
             <span
-              className={`circuit-badge ${isSimulating ? "running simulating" : ""}`}
+              className={`circuit-badge ${isSimulating ? "running simulating" : ""}${isEditingLibrary ? " library-edit" : ""}`}
               title={
                 isSimulating
                   ? t("header.activeCircuitSimTooltip", { name: currentCircuit.name })
                   : t("header.activeCircuitEditTooltip", { name: currentCircuit.name })
               }
             >
+              {isEditingLibrary && (
+                <span className="library-mode-pill" data-testid="library-mode-badge">
+                  {t("header.libraryMode.badgeLabel")}
+                </span>
+              )}
               <span className="circuit-icon">{isSimulating ? "▶" : "⚡"}</span>
               {currentCircuit.category && (
                 <span className="circuit-category">{currentCircuit.category} /</span>
               )}
               <span className="circuit-name">{currentCircuit.name}</span>
             </span>
+          </div>
+        )}
+        {isEditingLibrary && libraryContext && (
+          <div className="library-mode-actions">
+            <button
+              type="button"
+              className="library-mode-btn primary"
+              data-testid="save-library-mode-button"
+              title={t("header.libraryMode.saveToLibraryTooltip")}
+              onClick={() => void libraryContext.saveLibraryEditSession()}
+            >
+              {t("header.libraryMode.saveToLibrary")}
+            </button>
+            <button
+              type="button"
+              className="library-mode-btn"
+              data-testid="exit-library-mode-button"
+              title={t("header.libraryMode.exitLibraryModeTooltip")}
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  setConfirmExitLibraryMode(true);
+                } else {
+                  void libraryContext.exitLibraryEditMode();
+                }
+              }}
+            >
+              {t("header.libraryMode.exitLibraryMode")}
+            </button>
           </div>
         )}
       </div>
@@ -641,9 +863,15 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           <button
             type="button"
             className="history-button"
-            title={t("header.openProjectTooltip")}
+            title={
+              isEditingLibrary
+                ? t("header.libraryMode.blockedInLibraryModeTooltip")
+                : isCollabNonHost
+                  ? t("collabSync.hostOnlyProjectActionTooltip")
+                  : t("header.openProjectTooltip")
+            }
             aria-label={t("header.openProjectTooltip")}
-            disabled={isSimulating}
+            disabled={isSimulating || isEditingLibrary || isCollabNonHost}
             onClick={handleRequestImportProject}
           >
             <svg viewBox="0 0 24 24" className="history-icon" aria-hidden="true">
@@ -679,9 +907,9 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           <button
             type="button"
             className="history-button"
-            title={t("header.undoTooltip")}
+            title={isCollabReadOnly ? t("collabSync.guestReadOnlyTooltip") : t("header.undoTooltip")}
             aria-label={t("header.undoAriaLabel")}
-            disabled={!canUndo || isSimulating}
+            disabled={!canUndo || isSimulating || isCollabReadOnly}
             onClick={() => circuitContext?.undo()}
           >
             <svg viewBox="0 0 24 24" className="history-icon" aria-hidden="true">
@@ -695,9 +923,9 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           <button
             type="button"
             className="history-button"
-            title={t("header.redoTooltip")}
+            title={isCollabReadOnly ? t("collabSync.guestReadOnlyTooltip") : t("header.redoTooltip")}
             aria-label={t("header.redoAriaLabel")}
-            disabled={!canRedo || isSimulating}
+            disabled={!canRedo || isSimulating || isCollabReadOnly}
             onClick={() => circuitContext?.redo()}
           >
             <svg viewBox="0 0 24 24" className="history-icon" aria-hidden="true">
@@ -711,9 +939,9 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           <button
             type="button"
             className="history-button clear-history-button"
-            title={clearHistoryLabel}
+            title={isCollabReadOnly ? t("collabSync.guestReadOnlyTooltip") : clearHistoryLabel}
             aria-label={clearHistoryLabel}
-            disabled={historyCount === 0 || isSimulating}
+            disabled={historyCount === 0 || isSimulating || isCollabReadOnly}
             onClick={() => circuitContext?.clearHistory()}
           >
             <svg viewBox="0 0 24 24" className="history-icon" aria-hidden="true">
@@ -776,14 +1004,24 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         onExportHdl={() => setIsExportHdlOpen(true)}
         onExportImage={() => setIsExportImageOpen(true)}
         onOpenProjectSettings={() => {
-          if (!isSimulating) {
+          if (!isSimulating && !isCollabReadOnly) {
             setIsProjectSettingsOpen(true);
           }
         }}
-        onUndo={() => circuitContext?.undo()}
-        onRedo={() => circuitContext?.redo()}
+        onUndo={() => {
+          if (!isCollabReadOnly) {
+            circuitContext?.undo();
+          }
+        }}
+        onRedo={() => {
+          if (!isCollabReadOnly) {
+            circuitContext?.redo();
+          }
+        }}
         onCut={() => {
-          void canvasContext?.cutSelection();
+          if (!isCollabReadOnly) {
+            void canvasContext?.cutSelection();
+          }
         }}
         onCopy={() => {
           void canvasContext?.copySelection();
@@ -792,14 +1030,32 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           void canvasContext?.copySelectionForDesktop?.();
         }}
         onPaste={() => {
-          void canvasContext?.pasteFromClipboard();
+          if (!isCollabReadOnly) {
+            void canvasContext?.pasteFromClipboard();
+          }
         }}
         onSelectAll={() => {
           canvasContext?.selectAll?.();
         }}
         onDeleteSelected={() => {
-          if (!circuitContext) {
+          if (!circuitContext || isCollabReadOnly) {
             return;
+          }
+          if (isCollabInSharedProject) {
+            for (const symId of circuitContext.selectedSymbolIds) {
+              const lock = collabContext?.getForeignLockForTarget?.("symbol", symId);
+              if (lock) {
+                collabContext?.reportSoftLockBlocked?.(lock);
+                return;
+              }
+            }
+            for (const noteId of circuitContext.selectedTextNoteIds) {
+              const lock = collabContext?.getForeignLockForTarget?.("textNote", noteId);
+              if (lock) {
+                collabContext?.reportSoftLockBlocked?.(lock);
+                return;
+              }
+            }
           }
           circuitContext.removeEntities(
             circuitContext.selectedSymbolIds,
@@ -807,8 +1063,36 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
             circuitContext.selectedWireIds,
           );
         }}
-        onRotateRight={() => circuitContext?.rotateSelectedSymbols("clockwise")}
-        onRotateLeft={() => circuitContext?.rotateSelectedSymbols("counterClockwise")}
+        onRotateRight={() => {
+          if (isCollabReadOnly) {
+            return;
+          }
+          if (isCollabInSharedProject && circuitContext) {
+            for (const symId of circuitContext.selectedSymbolIds) {
+              const lock = collabContext?.getForeignLockForTarget?.("symbol", symId);
+              if (lock) {
+                collabContext?.reportSoftLockBlocked?.(lock);
+                return;
+              }
+            }
+          }
+          circuitContext?.rotateSelectedSymbols("clockwise");
+        }}
+        onRotateLeft={() => {
+          if (isCollabReadOnly) {
+            return;
+          }
+          if (isCollabInSharedProject && circuitContext) {
+            for (const symId of circuitContext.selectedSymbolIds) {
+              const lock = collabContext?.getForeignLockForTarget?.("symbol", symId);
+              if (lock) {
+                collabContext?.reportSoftLockBlocked?.(lock);
+                return;
+              }
+            }
+          }
+          circuitContext?.rotateSelectedSymbols("counterClockwise");
+        }}
         onEditCurrentCircuit={() => {
           if (!isSimulating && currentCircuit) {
             setIsCreatingCircuit(false);
@@ -816,7 +1100,7 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           }
         }}
         onCreateCircuit={() => {
-          if (!isSimulating) {
+          if (!isSimulating && !isCollabReadOnly) {
             setIsEditingCircuit(false);
             setIsCreatingCircuit(true);
           }
@@ -844,9 +1128,29 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         }}
         onOpenUsage={() => setIsUsageOpen(true)}
         onOpenReport={() => setIsReportOpen(true)}
-        onOpenOptions={() => setIsOptionsOpen(true)}
+        onOpenOptions={() => setOptionsTab("general")}
         onOpenPrivacy={() => setIsPrivacyOpen(true)}
         onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenByoSidecar={() => setOptionsTab("sidecar")}
+        onOpenSidecarDownload={() => setIsSidecarDownloadOpen(true)}
+        isCollabDisabled={collabContext?.isDisabled}
+        isCollabInSession={collabContext?.isInSession ?? false}
+        isCollabHost={collabContext?.isHost ?? false}
+        isCollabReadOnly={isCollabReadOnly}
+        isCollabNonHost={isCollabNonHost}
+        isCollabParticipantsPanelOpen={collabContext?.isParticipantsPanelOpen ?? false}
+        onStartCollabSession={() => setIsStartCollabOpen(true)}
+        onJoinCollabSession={() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent(OPEN_JOIN_COLLAB_DIALOG_EVENT));
+          }
+        }}
+        onToggleCollabParticipantsPanel={() => {
+          collabContext?.setParticipantsPanelOpen(!(collabContext?.isParticipantsPanelOpen ?? false));
+        }}
+        onEndOrLeaveCollabSession={() => {
+          collabContext?.endOrLeaveSession();
+        }}
       />
 
       {/* Eigenschaften-Dialog zum Bearbeiten oder Neuanlegen einer Schaltung */}
@@ -854,6 +1158,7 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
         isOpen={isEditingCircuit || isCreatingCircuit}
         circuit={isCreatingCircuit ? null : currentCircuit}
         isCreatingCircuit={isCreatingCircuit}
+        accentVariant={isEditingLibrary ? "library" : "default"}
         onSaveCircuit={(circuitId, updates) => {
           circuitContext?.updateCircuitProperties(circuitId, updates);
         }}
@@ -867,6 +1172,20 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           setIsEditingCircuit(false);
           setIsCreatingCircuit(false);
         }}
+      />
+
+      {/* Bestätigungsdialog beim Verlassen des Bibliotheks-Bearbeitungsmodus mit ungespeicherten Änderungen */}
+      <ConfirmDialog
+        isOpen={confirmExitLibraryMode}
+        title={t("header.libraryMode.unsavedExitConfirmTitle")}
+        message={t("header.libraryMode.unsavedExitConfirmMessage")}
+        confirmLabel={t("header.libraryMode.unsavedExitConfirmButton")}
+        isDanger={true}
+        onConfirm={() => {
+          setConfirmExitLibraryMode(false);
+          void libraryContext?.exitLibraryEditMode();
+        }}
+        onCancel={() => setConfirmExitLibraryMode(false)}
       />
 
       {/* Sicherheitsabfrage für destruktive Projekt- und Schaltungsaktionen */}
@@ -968,8 +1287,45 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
 
       {/* Systemeinstellungen-Dialog (DialogOptions) */}
       <OptionsDialog
-        isOpen={isOptionsOpen}
-        onClose={() => setIsOptionsOpen(false)}
+        isOpen={optionsTab !== null}
+        initialTab={optionsTab ?? "general"}
+        onOpenSidecarDownload={() => {
+          setOptionsTab(null);
+          setIsSidecarDownloadOpen(true);
+        }}
+        onClose={() => setOptionsTab(null)}
+      />
+
+      {/* Sidecar-Download-Dialog (T-093) */}
+      <SidecarDownloadDialog
+        isOpen={isSidecarDownloadOpen}
+        onOpenByoSidecar={() => {
+          setIsSidecarDownloadOpen(false);
+          setOptionsTab("sidecar");
+        }}
+        onClose={() => setIsSidecarDownloadOpen(false)}
+      />
+
+      {/* Kollaborations-Start- und Beitrittsdialog (T-096 / T-097) */}
+      <StartCollabSessionDialog
+        isOpen={isStartCollabOpen}
+        onOpenPrivacy={() => setIsPrivacyOpen(true)}
+        onOpenByoSidecar={() => setOptionsTab("sidecar")}
+        onClose={() => {
+          setIsStartCollabOpen(false);
+          collabContext?.clearError();
+        }}
+      />
+      <JoinCollabSessionDialog
+        isOpen={!collabContext?.isDisabled && (isJoinCollabOpen || Boolean(collabContext?.pendingInviteLink))}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSaveProjectBeforeJoin={() => handleSaveProjectWithMode(false)}
+        onOpenPrivacy={() => setIsPrivacyOpen(true)}
+        onClose={() => {
+          setIsJoinCollabOpen(false);
+          collabContext?.clearPendingInviteLink();
+          collabContext?.clearError();
+        }}
       />
     </header>
   );
@@ -1096,6 +1452,49 @@ const AppHeader = styled(({ ...other }: AppHeaderProps) => {
           "& > .circuit-icon": {
             color: "var(--color-status-running)",
           },
+        },
+
+        "&.library-edit": {
+          borderColor: "var(--color-library-accent)",
+          backgroundColor: "var(--color-library-bg)",
+
+          "& > .library-mode-pill": {
+            fontSize: "0.65rem",
+            fontWeight: 700,
+            padding: "0.08rem 0.35rem",
+            borderRadius: "0.25rem",
+            backgroundColor: "var(--color-library-accent)",
+            color: "var(--color-text-on-accent)",
+            marginRight: "0.2rem",
+          },
+        },
+      },
+    },
+
+    "& > .library-mode-actions": {
+      display: "flex",
+      alignItems: "center",
+      gap: "0.35rem",
+      marginLeft: "0.5rem",
+
+      "& > .library-mode-btn": {
+        padding: "0.3rem 0.6rem",
+        borderRadius: "0.3rem",
+        border: "1px solid var(--color-library-border)",
+        backgroundColor: "var(--color-bg-elevated)",
+        color: "var(--color-text-primary)",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        cursor: "pointer",
+
+        "&.primary": {
+          backgroundColor: "var(--color-library-accent)",
+          borderColor: "var(--color-library-accent)",
+          color: "var(--color-text-on-accent)",
+        },
+
+        "&:hover": {
+          filter: "brightness(1.08)",
         },
       },
     },

@@ -1,6 +1,9 @@
 import React from "react";
 
-import SimulationContext, { type SimulationStepResult } from ".";
+import SimulationContext, {
+  type SimulationCollabBridge,
+  type SimulationStepResult,
+} from ".";
 
 import type CircuitButton from "../../types/circuit/circuitButton";
 import type LogicalCircuit from "../../types/circuit/logicalCircuit";
@@ -197,7 +200,20 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
 
   const clientRef = React.useRef<SimulationClient | null>(null);
   const stopPromiseRef = React.useRef<Promise<void> | null>(null);
+  const collabBridgeRef = React.useRef<SimulationCollabBridge | null>(null);
   const commitSimulatedMemoryData = circuitContext?.commitSimulatedMemoryData;
+
+  const registerCollabBridge = React.useCallback(
+    (bridge: SimulationCollabBridge | null) => {
+      collabBridgeRef.current = bridge;
+    },
+    [],
+  );
+
+  const isCollabSnapshotMode = React.useCallback(
+    (): boolean => Boolean(collabBridgeRef.current?.isCollabSnapshotMode()),
+    [],
+  );
 
   const audioEngineRef = React.useRef<AudioEngine | null>(null);
   const audioVolume = circuitContext?.appSettings?.audioVolume ?? AUDIO_DEFAULT_VOLUME;
@@ -297,6 +313,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
 
   const resetSimulationRuntimeState = React.useCallback(
     (sendStopToWorker = true) => {
+      const wasSimulating = isSimulatingRef.current;
       if (sendStopToWorker) {
         void clientRef.current?.stop();
       }
@@ -326,6 +343,9 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       cleanUpReportRef.current = null;
       pressedShortcutButtonsRef.current.clear();
       audioEngineRef.current?.silenceAll();
+      if (wasSimulating) {
+        collabBridgeRef.current?.onSimulationStateChange?.(false);
+      }
     },
     [],
   );
@@ -334,7 +354,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
   const flushPersistentMemories = React.useCallback(
     async (): Promise<boolean> => {
       const client = clientRef.current;
-      if (!client || !isSimulatingRef.current) {
+      if (!client || !isSimulatingRef.current || isCollabSnapshotMode()) {
         return false;
       }
       try {
@@ -347,7 +367,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
         return false;
       }
     },
-    [commitSimulatedMemoryData],
+    [commitSimulatedMemoryData, isCollabSnapshotMode],
   );
 
   // Beendet die Simulation synchronisiert mit Worker-Stopp und Rückschreiben persistenter RAMs
@@ -365,7 +385,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       const run = (async () => {
         try {
           const dumps = await client.stop();
-          if (dumps.length > 0) {
+          if (dumps.length > 0 && !isCollabSnapshotMode()) {
             commitSimulatedMemoryData?.(dumps);
           }
         } finally {
@@ -377,7 +397,11 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       stopPromiseRef.current = run;
       return run;
     },
-    [commitSimulatedMemoryData, resetSimulationRuntimeState],
+    [
+      commitSimulatedMemoryData,
+      isCollabSnapshotMode,
+      resetSimulationRuntimeState,
+    ],
   );
 
   const handleWorkerStatusOscillation = React.useCallback(
@@ -632,7 +656,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       let effectiveRoot = rootCircuit;
       if (isSimulatingRef.current) {
         const dumps = await client.stop();
-        if (dumps.length > 0) {
+        if (dumps.length > 0 && !isCollabSnapshotMode()) {
           commitSimulatedMemoryData?.(dumps);
           const refreshed = circuitContext?.project?.logicalCircuits.find(
             (lc) => lc.logicalCircuitId === rootCircuit.logicalCircuitId,
@@ -651,6 +675,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
 
         isSimulatingRef.current = true;
         setIsSimulating(true);
+        collabBridgeRef.current?.onSimulationStateChange?.(true);
         isPausedRef.current = paused;
         setIsPaused(paused);
         hasProbesRef.current = ready.probeCount > 0;
@@ -687,6 +712,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       currentCircuitId,
       getClient,
       handleThrownSimulationError,
+      isCollabSnapshotMode,
       syncActiveCleanUpReport,
     ],
   );
@@ -1028,6 +1054,9 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
       if (projectFrequency === undefined || projectIsMaxSpeed === undefined) {
         return;
       }
+      if (isSimulating && collabBridgeRef.current?.isCollabSnapshotMode()) {
+        return;
+      }
       const nextLimit = resolveFrequencyFromProject(projectFrequency, projectIsMaxSpeed);
       if (frameRateLimitRef.current !== nextLimit) {
         frameRateLimitRef.current = nextLimit;
@@ -1035,15 +1064,22 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
         clientRef.current?.setSpeed(nextLimit);
       }
     },
-    [projectFrequency, projectIsMaxSpeed],
+    [
+      isSimulating,
+      projectFrequency,
+      projectIsMaxSpeed,
+    ],
   );
 
-  // Geschwindigkeit / Framerate anpassen
+  // Geschwindigkeit / Framerate anpassen (in kollaborativer Snapshot-Simulation streng lokal)
   const handleSetFrameRateLimit = React.useCallback(
     (limit: FrameRateLimit) => {
       frameRateLimitRef.current = limit;
       setFrameRateLimit(limit);
       clientRef.current?.setSpeed(limit);
+      if (isSimulatingRef.current && isCollabSnapshotMode()) {
+        return;
+      }
       if (circuitContext?.updateProjectProperties) {
         if (limit === "max") {
           circuitContext.updateProjectProperties({ isMaximumSpeed: true });
@@ -1055,7 +1091,7 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
         }
       }
     },
-    [circuitContext],
+    [circuitContext, isCollabSnapshotMode],
   );
 
   // Fordert den aktuellen Snapshot vom WebWorker an und synchronisiert UI-Refs
@@ -1334,6 +1370,10 @@ const SimulationContextProvider: React.FC<SimulationContextProviderProps> = ({ c
         pullSnapshot,
         getWireState,
         playPreviewTone,
+        registerCollabBridge,
+        get isCollabSnapshotSimulation() {
+          return isSimulatingRef.current && Boolean(collabBridgeRef.current?.isCollabSnapshotMode());
+        },
       }}
     >
       {children}

@@ -259,7 +259,7 @@ function readNullableLineHeights(
   return items.map((item, idx) => readLineHeightValue(item, `${context}.${key}[${idx}]`));
 }
 
-function parseJsonObject(jsonText: string): Record<string, unknown> {
+export function parseNativeJsonObject(jsonText: string): Record<string, unknown> {
   if (!jsonText || !jsonText.trim()) {
     throw new Error("Die Projektdatei ist leer.");
   }
@@ -276,7 +276,7 @@ function parseJsonObject(jsonText: string): Record<string, unknown> {
   return parsed;
 }
 
-function parseHeader(
+export function parseNativeDocumentHeader(
   root: Record<string, unknown>,
   expectedFormats: readonly string[],
 ): { format: string; schemaVersion: typeof NATIVE_PROJECT_SCHEMA_VERSION; appVersion: string } {
@@ -729,11 +729,244 @@ function validateCircuitGraph(
   }
 }
 
+// Parst und validiert ein Array nativer Schaltpläne inkl. Referenz- und Zyklusprüfung
+export function parseNativeLogicalCircuits(
+  rawCircuitsValue: unknown,
+  options?: {
+    allowEmpty?: boolean;
+    requiredCircuitIds?: { label: string; id: string }[];
+    emptyErrorMessage?: string;
+  },
+): NativeLogicalCircuit[] {
+  const rawCircuits = assertArray(rawCircuitsValue, "logicalCircuits");
+  if (!options?.allowEmpty && rawCircuits.length === 0) {
+    throw new Error(
+      options?.emptyErrorMessage ??
+      "Ungültige Projektdatei: Mindestens ein Schaltplan in \"logicalCircuits\" ist erforderlich.",
+    );
+  }
+
+  const logicalCircuits = rawCircuits.map((lc, idx) => parseLogicalCircuit(lc, idx));
+  validateCircuitGraph(logicalCircuits, options?.requiredCircuitIds ?? []);
+  return logicalCircuits;
+}
+
+// Hydratisiert ein einzelnes natives Pin-Element in Pin- und PinCircuit-Instanzen
+export function instantiateNativePin(
+  rawPin: NativePinElement,
+  logicalCircuitId: string,
+): { pin: Pin; pinCircuit: Circuit } {
+  const { pin, pinCircuit } = createPinCircuit(
+    rawPin.pinId,
+    logicalCircuitId,
+    rawPin.pinType,
+    rawPin.name,
+    rawPin.bitWidth,
+    rawPin.pinSide,
+    rawPin.inverted,
+    rawPin.index,
+    rawPin.width,
+    rawPin.height,
+    rawPin.jamNotation,
+  );
+  pin.note = rawPin.note;
+  pinCircuit.note = rawPin.note;
+  return { pin, pinCircuit };
+}
+
+// Hydratisiert ein einzelnes natives Schaltungselement (außer Pin) in eine Circuit-Entität
+export function instantiateNativeElement(
+  elem: NativeCircuitElement,
+  resolveSubCircuit: (logicalCircuitId: string) => LogicalCircuit | undefined,
+  existingGates?: ReadonlyMap<string, Gate>,
+): { circuit: Circuit; sharedGate?: Gate } {
+  switch (elem.kind) {
+    case "gate": {
+      const canonical = createGate(
+        elem.gateType,
+        elem.inputCount,
+        elem.invertedOutput,
+        elem.color ?? "red",
+      );
+      const sharedGate = existingGates?.get(canonical.gateId) ?? canonical;
+      const circuit = elem.note !== "" ? { ...sharedGate, note: elem.note } : sharedGate;
+      return { circuit, sharedGate };
+    }
+
+    case "subCircuit": {
+      const resolvedSub = resolveSubCircuit(elem.logicalCircuitId);
+      if (!resolvedSub) {
+        throw new Error(`Fehlende Subschaltungs-Referenz "${elem.logicalCircuitId}".`);
+      }
+      return { circuit: resolvedSub };
+    }
+
+    case "circuitButton": {
+      const button = createCircuitButton(
+        elem.componentId,
+        elem.notation,
+        elem.isToggle,
+        elem.pinSide,
+        elem.inverted,
+        elem.width,
+        elem.height,
+        false,
+      );
+      button.name = elem.name;
+      button.modifiers = elem.modifiers;
+      button.keyCode = elem.keyCode;
+      button.note = elem.note;
+      return { circuit: button };
+    }
+
+    case "constant": {
+      const constant = createConstant(
+        elem.componentId,
+        elem.bitWidth,
+        elem.value,
+        elem.pinSide,
+        elem.isHex,
+        elem.width,
+        elem.height,
+      );
+      constant.note = elem.note;
+      return { circuit: constant };
+    }
+
+    case "circuitProbe": {
+      const probe = createCircuitProbe(
+        elem.componentId,
+        elem.name,
+        elem.pinSide,
+        elem.width,
+        elem.height,
+        elem.isHex,
+      );
+      probe.displayFormat = elem.displayFormat;
+      probe.note = elem.note;
+      return { circuit: probe };
+    }
+
+    case "splitter": {
+      const splitter = createSplitter(
+        elem.componentId,
+        elem.bitWidth,
+        elem.pinCount,
+        elem.clockwise,
+      );
+      splitter.note = elem.note;
+      return { circuit: splitter };
+    }
+
+    case "memory": {
+      const memory = createMemory(
+        elem.componentId,
+        elem.writable,
+        elem.addressBitWidth,
+        elem.dataBitWidth,
+        {
+          writeOn1: elem.writeOn1,
+          onStart: elem.onStart,
+          dualPort: elem.dualPort,
+          data: elem.data,
+          note: elem.note,
+        },
+      );
+      return { circuit: memory };
+    }
+
+    case "ledMatrix": {
+      const matrix = createLedMatrix(
+        elem.componentId,
+        elem.rows,
+        elem.columns,
+        elem.matrixType,
+        elem.cellShape,
+        elem.colors,
+        elem.persistenceMultiplier,
+      );
+      matrix.name = elem.name;
+      matrix.note = elem.note;
+      return { circuit: matrix };
+    }
+
+    case "sensor": {
+      const sensor = createSensor(
+        elem.componentId,
+        elem.sensorType,
+        elem.bitWidth,
+        elem.pinSide,
+        elem.notation,
+        elem.data,
+        elem.note,
+      );
+      return { circuit: sensor };
+    }
+
+    case "sound": {
+      const sound = createSound(
+        elem.componentId,
+        elem.pinSide,
+        elem.notation,
+        elem.note,
+        elem.frequency,
+        elem.waveform,
+      );
+      return { circuit: sound };
+    }
+
+    case "synthesizer": {
+      const synth = createSynthesizer(
+        elem.componentId,
+        elem.mode,
+        elem.notation,
+        elem.note,
+      );
+      return { circuit: synth };
+    }
+
+    case "graphicsArray": {
+      const ga = createGraphicsArray(elem.componentId, {
+        writeOn1: elem.writeOn1,
+        onStart: elem.onStart,
+        dataBitWidth: elem.dataBitWidth,
+        bitsPerPixel: elem.bitsPerPixel,
+        width: elem.width,
+        height: elem.height,
+        zoom: elem.zoom,
+        note: elem.note,
+      });
+      return { circuit: ga };
+    }
+  }
+}
+
+// Hydratisiert eine native Textnotiz in das interne TextNote-Modell
+export function instantiateNativeTextNote(
+  rawNote: NativeTextNote,
+  logicalCircuitId: string,
+): TextNote {
+  return {
+    textNoteId: rawNote.textNoteId,
+    logicalCircuitId,
+    x: rawNote.x,
+    y: rawNote.y,
+    width: rawNote.width,
+    height: rawNote.height,
+    note: rawNote.note,
+    rotation: rawNote.rotation,
+    lineHeight: rawNote.lineHeight,
+    fontFamily: rawNote.fontFamily,
+    lineHeights: rawNote.lineHeights ? [...rawNote.lineHeights] : undefined,
+  };
+}
+
 // Rekonstruiert aus validierten nativen Schaltplänen ein vollständiges, simulationsfähiges CircuitProject
-function buildCircuitProjectFromNative(
+export function buildCircuitProjectFromNativeCircuits(
   projectMeta: Project,
   collapsedCategories: CollapsedCategory[],
   nativeCircuits: NativeLogicalCircuit[],
+  externalCircuits?: ReadonlyMap<string, LogicalCircuit>,
 ): CircuitProject {
   const circuits = new Map<string, Circuit>();
   const gates = new Map<string, Gate>();
@@ -783,21 +1016,7 @@ function buildCircuitProjectFromNative(
     const lcTextNotes: TextNote[] = [];
 
     for (const rawPin of rawLc.pins) {
-      const { pin, pinCircuit } = createPinCircuit(
-        rawPin.pinId,
-        rawLc.logicalCircuitId,
-        rawPin.pinType,
-        rawPin.name,
-        rawPin.bitWidth,
-        rawPin.pinSide,
-        rawPin.inverted,
-        rawPin.index,
-        rawPin.width,
-        rawPin.height,
-        rawPin.jamNotation,
-      );
-      pin.note = rawPin.note;
-      pinCircuit.note = rawPin.note;
+      const { pin, pinCircuit } = instantiateNativePin(rawPin, rawLc.logicalCircuitId);
 
       pins.push(pin);
       lcPins.push(pin);
@@ -816,195 +1035,50 @@ function buildCircuitProjectFromNative(
     }
 
     for (const elem of rawLc.elements) {
-      let targetCircuit: Circuit;
+      const { circuit: targetCircuit, sharedGate } = instantiateNativeElement(
+        elem,
+        (subId) => logicalCircuitById.get(subId) ?? externalCircuits?.get(subId),
+        gates,
+      );
 
-      switch (elem.kind) {
-        case "gate": {
-          const canonical = createGate(
-            elem.gateType,
-            elem.inputCount,
-            elem.invertedOutput,
-            elem.color ?? "red",
-          );
-          const sharedGate = gates.get(canonical.gateId) ?? canonical;
-          gates.set(sharedGate.gateId, sharedGate);
-          circuits.set(sharedGate.circuitId, sharedGate);
-          // Instanz-Notiz am Symbol-Circuit belassen, damit geteilte Gates sauber bleiben
-          targetCircuit = elem.note !== "" ? { ...sharedGate, note: elem.note } : sharedGate;
-          break;
-        }
+      if (sharedGate) {
+        gates.set(sharedGate.gateId, sharedGate);
+        circuits.set(sharedGate.circuitId, sharedGate);
+      } else if (targetCircuit.kind !== "logicalCircuit") {
+        circuits.set(targetCircuit.circuitId, targetCircuit);
+      }
 
-        case "subCircuit":
-          targetCircuit = logicalCircuitById.get(elem.logicalCircuitId)!;
+      switch (targetCircuit.kind) {
+        case "circuitButton":
+          circuitButtons.push(targetCircuit as CircuitButton);
           break;
-
-        case "circuitButton": {
-          const button = createCircuitButton(
-            elem.componentId,
-            elem.notation,
-            elem.isToggle,
-            elem.pinSide,
-            elem.inverted,
-            elem.width,
-            elem.height,
-            false,
-          );
-          button.name = elem.name;
-          button.modifiers = elem.modifiers;
-          button.keyCode = elem.keyCode;
-          button.note = elem.note;
-          circuitButtons.push(button);
-          circuits.set(button.circuitId, button);
-          targetCircuit = button;
+        case "constant":
+          constants.push(targetCircuit as Constant);
           break;
-        }
-
-        case "constant": {
-          const constant = createConstant(
-            elem.componentId,
-            elem.bitWidth,
-            elem.value,
-            elem.pinSide,
-            elem.isHex,
-            elem.width,
-            elem.height,
-          );
-          constant.note = elem.note;
-          constants.push(constant);
-          circuits.set(constant.circuitId, constant);
-          targetCircuit = constant;
+        case "circuitProbe":
+          circuitProbes.push(targetCircuit as CircuitProbe);
           break;
-        }
-
-        case "circuitProbe": {
-          const probe = createCircuitProbe(
-            elem.componentId,
-            elem.name,
-            elem.pinSide,
-            elem.width,
-            elem.height,
-            elem.isHex,
-          );
-          probe.displayFormat = elem.displayFormat;
-          probe.note = elem.note;
-          circuitProbes.push(probe);
-          circuits.set(probe.circuitId, probe);
-          targetCircuit = probe;
+        case "splitter":
+          splitters.push(targetCircuit as Splitter);
           break;
-        }
-
-        case "splitter": {
-          const splitter = createSplitter(
-            elem.componentId,
-            elem.bitWidth,
-            elem.pinCount,
-            elem.clockwise,
-          );
-          splitter.note = elem.note;
-          splitters.push(splitter);
-          circuits.set(splitter.circuitId, splitter);
-          targetCircuit = splitter;
+        case "memory":
+          memories.push(targetCircuit as Memory);
           break;
-        }
-
-        case "memory": {
-          const memory = createMemory(
-            elem.componentId,
-            elem.writable,
-            elem.addressBitWidth,
-            elem.dataBitWidth,
-            {
-              writeOn1: elem.writeOn1,
-              onStart: elem.onStart,
-              dualPort: elem.dualPort,
-              data: elem.data,
-              note: elem.note,
-            },
-          );
-          memories.push(memory);
-          circuits.set(memory.circuitId, memory);
-          targetCircuit = memory;
+        case "ledMatrix":
+          ledMatrices.push(targetCircuit as LedMatrix);
           break;
-        }
-
-        case "ledMatrix": {
-          const matrix = createLedMatrix(
-            elem.componentId,
-            elem.rows,
-            elem.columns,
-            elem.matrixType,
-            elem.cellShape,
-            elem.colors,
-            elem.persistenceMultiplier,
-          );
-          matrix.name = elem.name;
-          matrix.note = elem.note;
-          ledMatrices.push(matrix);
-          circuits.set(matrix.circuitId, matrix);
-          targetCircuit = matrix;
+        case "sensor":
+          sensors.push(targetCircuit as Sensor);
           break;
-        }
-
-        case "sensor": {
-          const sensor = createSensor(
-            elem.componentId,
-            elem.sensorType,
-            elem.bitWidth,
-            elem.pinSide,
-            elem.notation,
-            elem.data,
-            elem.note,
-          );
-          sensors.push(sensor);
-          circuits.set(sensor.circuitId, sensor);
-          targetCircuit = sensor;
+        case "sound":
+          sounds.push(targetCircuit as Sound);
           break;
-        }
-
-        case "sound": {
-          const sound = createSound(
-            elem.componentId,
-            elem.pinSide,
-            elem.notation,
-            elem.note,
-            elem.frequency,
-            elem.waveform,
-          );
-          sounds.push(sound);
-          circuits.set(sound.circuitId, sound);
-          targetCircuit = sound;
+        case "synthesizer":
+          synthesizers.push(targetCircuit as Synthesizer);
           break;
-        }
-
-        case "synthesizer": {
-          const synth = createSynthesizer(
-            elem.componentId,
-            elem.mode,
-            elem.notation,
-            elem.note,
-          );
-          synthesizers.push(synth);
-          circuits.set(synth.circuitId, synth);
-          targetCircuit = synth;
+        case "graphicsArray":
+          graphicsArrays.push(targetCircuit as GraphicsArray);
           break;
-        }
-
-        case "graphicsArray": {
-          const ga = createGraphicsArray(elem.componentId, {
-            writeOn1: elem.writeOn1,
-            onStart: elem.onStart,
-            dataBitWidth: elem.dataBitWidth,
-            bitsPerPixel: elem.bitsPerPixel,
-            width: elem.width,
-            height: elem.height,
-            zoom: elem.zoom,
-            note: elem.note,
-          });
-          graphicsArrays.push(ga);
-          circuits.set(ga.circuitId, ga);
-          targetCircuit = ga;
-          break;
-        }
       }
 
       const symbol = createCircuitSymbol(
@@ -1034,19 +1108,7 @@ function buildCircuitProjectFromNative(
     }
 
     for (const rawNote of rawLc.textNotes) {
-      const note: TextNote = {
-        textNoteId: rawNote.textNoteId,
-        logicalCircuitId: rawLc.logicalCircuitId,
-        x: rawNote.x,
-        y: rawNote.y,
-        width: rawNote.width,
-        height: rawNote.height,
-        note: rawNote.note,
-        rotation: rawNote.rotation,
-        lineHeight: rawNote.lineHeight,
-        fontFamily: rawNote.fontFamily,
-        lineHeights: rawNote.lineHeights ? [...rawNote.lineHeights] : undefined,
-      };
+      const note = instantiateNativeTextNote(rawNote, rawLc.logicalCircuitId);
       lcTextNotes.push(note);
       allTextNotes.push(note);
     }
@@ -1147,7 +1209,7 @@ export function isSupportedNativeProjectFile(fileName: string): boolean {
 // Validiert und parst ein unbekanntes Objekt in ein typsicheres NativeProjectDocument
 export function parseNativeProjectDocument(raw: unknown): NativeProjectDocument {
   const root = assertRecord(raw, "Dokument-Wurzel");
-  const header = parseHeader(root, [NATIVE_PROJECT_FORMAT]);
+  const header = parseNativeDocumentHeader(root, [NATIVE_PROJECT_FORMAT]);
   const project = parseProjectMeta(root.project);
 
   const rawCategories = assertArray(root.collapsedCategories, "collapsedCategories");
@@ -1158,19 +1220,15 @@ export function parseNativeProjectDocument(raw: unknown): NativeProjectDocument 
     return cat;
   });
 
-  const rawCircuits = assertArray(root.logicalCircuits, "logicalCircuits");
-  if (rawCircuits.length === 0) {
-    throw new Error("Ungültige Projektdatei: Mindestens ein Schaltplan in \"logicalCircuits\" ist erforderlich.");
-  }
-
-  const logicalCircuits = rawCircuits.map((lc, idx) => parseLogicalCircuit(lc, idx));
   const requiredRefs: { label: string; id: string }[] = [
     { label: "project.logicalCircuitId", id: project.logicalCircuitId },
   ];
   if (project.startupCircuitId !== null) {
     requiredRefs.push({ label: "project.startupCircuitId", id: project.startupCircuitId });
   }
-  validateCircuitGraph(logicalCircuits, requiredRefs);
+  const logicalCircuits = parseNativeLogicalCircuits(root.logicalCircuits, {
+    requiredCircuitIds: requiredRefs,
+  });
 
   return {
     format: NATIVE_PROJECT_FORMAT,
@@ -1185,7 +1243,7 @@ export function parseNativeProjectDocument(raw: unknown): NativeProjectDocument 
 // Validiert und parst ein unbekanntes Objekt in ein typsicheres NativeSnippetDocument
 export function parseNativeSnippetDocument(raw: unknown): NativeSnippetDocument {
   const root = assertRecord(raw, "Dokument-Wurzel");
-  const header = parseHeader(root, [NATIVE_SNIPPET_FORMAT, NATIVE_PROJECT_FORMAT]);
+  const header = parseNativeDocumentHeader(root, [NATIVE_SNIPPET_FORMAT, NATIVE_PROJECT_FORMAT]);
 
   if (header.format === NATIVE_PROJECT_FORMAT) {
     const fullDoc = parseNativeProjectDocument(raw);
@@ -1199,13 +1257,10 @@ export function parseNativeSnippetDocument(raw: unknown): NativeSnippetDocument 
   }
 
   const rootCircuitId = readString(root, "rootCircuitId", "Snippet-Header", false);
-  const rawCircuits = assertArray(root.logicalCircuits, "logicalCircuits");
-  if (rawCircuits.length === 0) {
-    throw new Error("Ungültiges Snippet: Mindestens ein Schaltplan in \"logicalCircuits\" ist erforderlich.");
-  }
-
-  const logicalCircuits = rawCircuits.map((lc, idx) => parseLogicalCircuit(lc, idx));
-  validateCircuitGraph(logicalCircuits, [{ label: "rootCircuitId", id: rootCircuitId }]);
+  const logicalCircuits = parseNativeLogicalCircuits(root.logicalCircuits, {
+    requiredCircuitIds: [{ label: "rootCircuitId", id: rootCircuitId }],
+    emptyErrorMessage: "Ungültiges Snippet: Mindestens ein Schaltplan in \"logicalCircuits\" ist erforderlich.",
+  });
 
   return {
     format: NATIVE_SNIPPET_FORMAT,
@@ -1216,11 +1271,8 @@ export function parseNativeSnippetDocument(raw: unknown): NativeSnippetDocument 
   };
 }
 
-// Deserialisiert einen nativen Projekt-JSON-String in ein vollständiges CircuitProject
-export function parseNativeProject(jsonText: string): CircuitProject {
-  const raw = parseJsonObject(jsonText);
-  const doc = parseNativeProjectDocument(raw);
-
+// Hydratisiert ein validiertes NativeProjectDocument in ein vollständiges CircuitProject
+export function hydrateNativeProjectDocument(doc: NativeProjectDocument): CircuitProject {
   const collapsedCategories: CollapsedCategory[] = [];
   const seenCollapsed = new Set<string>();
   for (const name of doc.collapsedCategories) {
@@ -1244,12 +1296,19 @@ export function parseNativeProject(jsonText: string): CircuitProject {
     categoryPrimitivesCollapsed: doc.project.categoryPrimitivesCollapsed,
   };
 
-  return buildCircuitProjectFromNative(projectMeta, collapsedCategories, doc.logicalCircuits);
+  return buildCircuitProjectFromNativeCircuits(projectMeta, collapsedCategories, doc.logicalCircuits);
+}
+
+// Deserialisiert einen nativen Projekt-JSON-String in ein vollständiges CircuitProject
+export function parseNativeProject(jsonText: string): CircuitProject {
+  const raw = parseNativeJsonObject(jsonText);
+  const doc = parseNativeProjectDocument(raw);
+  return hydrateNativeProjectDocument(doc);
 }
 
 // Deserialisiert ein natives Zwischenablage-Snippet (oder Vollprojekt) in ein CircuitProject
 export function parseNativeSnippet(jsonText: string): CircuitProject {
-  const raw = parseJsonObject(jsonText);
+  const raw = parseNativeJsonObject(jsonText);
   const doc = parseNativeSnippetDocument(raw);
 
   const projectMeta: Project = {
@@ -1266,5 +1325,5 @@ export function parseNativeSnippet(jsonText: string): CircuitProject {
     categoryPrimitivesCollapsed: false,
   };
 
-  return buildCircuitProjectFromNative(projectMeta, [], doc.logicalCircuits);
+  return buildCircuitProjectFromNativeCircuits(projectMeta, [], doc.logicalCircuits);
 }

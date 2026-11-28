@@ -47,6 +47,7 @@ const MemoryDataGrid = styled(({
   onPageChange,
   pageSize = DEFAULT_PAGE_SIZE,
   onCellChange,
+  className,
   ...other
 }: MemoryDataGridProps) => {
   const { t } = useTranslation();
@@ -160,7 +161,7 @@ const MemoryDataGrid = styled(({
       data-component="MemoryDataGrid"
       data-readonly={readOnly ? "true" : "false"}
       data-disabled={disabled ? "true" : "false"}
-      className={`${other.className ?? ""} format-${format}${disabled ? " is-disabled" : ""}`.trim()}
+      className={`${className ?? ""} format-${format}${disabled ? " is-disabled" : ""}`.trim()}
     >
       <div className="grid-toolbar">
         <div

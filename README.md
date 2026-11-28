@@ -26,14 +26,24 @@
   - Event-driven three-state logic (`Off`/Tri-State, `On0`, `On1`) using a fast `DirtyList` evaluator inside a dedicated WebWorker.
   - Zero runtime overhead for hierarchy frames, pins, and splitters thanks to compile-time hierarchy flattening (`CircuitMap`).
   - Supports single-stepping (`F10`), target clock frequencies (`1 Hz` – `60 Hz`), and an unthrottled **Max-FPS** mode decoupled via `requestAnimationFrame`.
+- **Analysis, Oscilloscope & HDL Export:**
+  - Truth table evaluation in the WebWorker (`Ctrl+T`, up to `4096` rows, `validators` expression filter, TSV/CSV export), hierarchical usage finder (`UsageDialog`), and structured circuit report (`ReportDialog` with Markdown export).
+  - Floating interactive oscilloscope (`Ctrl+O`) and single-probe history dialog (`ProbeHistoryDialog`) with multi-bit bus decoding, zoom, markers, and measurement cursor.
+  - Multi-target HDL export for **Verilog/SystemVerilog** (`.sv` + testbench), **VHDL** (`.vhd` + testbench), and **Nand2Tetris HDL** (`.hdl`, `.tst`, `.cmp`) with live preview and multi-file folder export via File System Access API.
+- **Circuit Library & Standard ICs:**
+  - Persistent personal circuit library (`*.lclib`) via File System Access API (plus read-only reload cache), built-in standard ICs, switchable sidebar (`Project` ↔ `Library`), sub-circuit extraction with hash deduplication, and dedicated color-coded library editing mode.
+- **Real-Time WebRTC Collaboration:**
+  - Direct peer-to-peer collaboration sessions with ephemeral 5-minute role-based invite links (*Guest* / *Collaborator*, without lobby or chat), host-authoritative model synchronization with 200-revision ring-buffer catch-up, soft-locks, per-user Undo/Redo, and protected host handover.
+  - Live participant panel with local `Name → Color` management, decoupled live cursors (with configurable idle timeout and visibility filters), independent viewport navigation & "Follow participant", plus side-effect-free local snapshot simulation with background delta buffering and automatic catch-up on stop.
 - **Native `.lcweb` Project Format & Desktop `.CircuitProject` Compatibility:**
   - Native, strictly validated JSON project format (`*.lcweb`) with direct disk access via the browser's File System Access API (`IndexedDB` directory & file handles).
   - Seamless XML import and normalized export for LogicCircuit Desktop (`*.CircuitProject`, schema `2.0.0.14`).
   - Scale-accurate `PNG (1:1)` and `SVG` schematic export (dark grid or transparent background, including live simulation state).
 - **Internationalization (i18n):**
   - Full English and German UI localization (`i18next` / `react-i18next`) with automatic browser locale detection and instant status bar language switcher.
-- **Model Context Protocol (MCP) for AI Assistants:**
-  - Built-in bidirectional MCP bridge allowing AI agents (such as Antigravity or Claude Desktop) to inspect, build, validate, and simulate circuits in real time — locally via Vite HMR or remotely via a stateless, GDPR-compliant RAM relay and multi-tab `SharedWorker` *(disabled in the static GitHub Pages build)*.
+- **Model Context Protocol (MCP) for AI Assistants & BYO SideCar:**
+  - Built-in bidirectional **Streamable-HTTP MCP (`/mcp`)** bridge allowing AI agents (such as Antigravity or Claude Desktop) to inspect, build, validate, and simulate circuits in real time — locally via Vite HMR (`http://localhost:5173/mcp`) or remotely via a stateless, GDPR-compliant Node 22 Sidecar with Auth-First protection, in-memory rate limiting, and multi-tab `SharedWorker`.
+  - **Bring Your Own SideCar (`BYO SideCar`):** On static GitHub Pages builds, MCP and WebRTC Collaboration remain completely silent until explicitly enabled with a custom Sidecar URL (`http://localhost:3001` or `https://...`); a standalone Sidecar package (`.zip`) can be downloaded directly via **Help → Download SideCar...** with automatic SemVer compatibility checks.
 
 ---
 
@@ -55,8 +65,9 @@ yarn install
 | Command | Description |
 | :--- | :--- |
 | `yarn dev` | Starts the Vite development server at `http://localhost:5173` (with local MCP bridge enabled) |
-| `yarn build` | Builds the production bundle into `dist/` (with opt-in Remote MCP support) |
-| `yarn build:pages` | Builds the static, MCP-free bundle into `dist/` (`VITE_DISABLE_MCP=true`, used for GitHub Pages) |
+| `yarn build` | Builds the production bundle into `dist/` (with opt-in Remote MCP, WebRTC Collab & `downloads/logic-circuit-sidecar.zip`) |
+| `yarn build:pages` | Builds the static GitHub Pages bundle into `dist/` (`--mode pages` / `SIDECAR_CUSTOM_ONLY=true`: zero default network traffic, opt-in BYO SideCar + downloadable Sidecar ZIP) |
+| `yarn build:sidecar-zip` | Generates the standalone Node 22 / Docker Sidecar ZIP archive under `dist/downloads/` |
 | `yarn preview` | Previews the production build locally |
 | `yarn test` | Runs the automated Vitest unit and integration test suite |
 | `yarn errorcheck` | Runs TypeScript type checking for frontend (`tsconfig.json`) and server (`tsconfig.server.json`) |
@@ -76,7 +87,9 @@ yarn install
 | `R` / `L` (or `Shift+R`) | Rotate selection `90°` clockwise / counter-clockwise |
 | `F2` / Double-click | Open properties dialog for selected component or active circuit |
 | `Ctrl+F` | Open project-wide component & signal search |
+| `Ctrl+T` | Open truth table evaluator |
 | `F5` / `Shift+F5` | Start or pause simulation / Stop simulation |
+| `Ctrl+O` | Open oscilloscope during simulation |
 | `F10` | Single-step simulation |
 
 ---
@@ -90,7 +103,7 @@ Detailed technical documentation is located in the [`docs/`](docs/) directory *(
 - **[`docs/mcp.md`](docs/mcp.md):** Architecture, tool catalog, and deployment guide for the local and remote Model Context Protocol (MCP) integration.
 - **[`docs/coding-rules.md`](docs/coding-rules.md):** Mandatory TypeScript, React, Emotion, and formatting guidelines.
 - **[`docs/history.md`](docs/history.md):** Comprehensive chronicle of all completed releases, user stories, tasks, and bug fixes.
-- **[`docs/scrum-board.md`](docs/scrum-board.md):** Development board and Post-1.0 roadmap.
+- **[`docs/scrum-board.md`](docs/scrum-board.md):** Development board, backlog, and roadmap.
 
 ---
 

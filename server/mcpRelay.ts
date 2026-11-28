@@ -44,10 +44,14 @@ type McpRelayOptions = {
   timeoutMs?: number;
   accessKey?: string;
   gracePeriodMs?: number;
+  maxSessions?: number;
+  maxConcurrentCallsPerSession?: number;
 };
 
 const SESSION_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 const SESSION_ID_REGEX = /^[A-Za-z0-9_-]{8,64}$/;
+const DEFAULT_MAX_SESSIONS = 20;
+const DEFAULT_MAX_CONCURRENT_CALLS_PER_SESSION = 4;
 
 export class MissingSessionIdError extends Error {
   constructor() {
@@ -71,6 +75,20 @@ export class UnauthorizedRelayError extends Error {
   constructor() {
     super("Ungültiger oder fehlender Zugangsschlüssel (MCP_ACCESS_KEY).");
     this.name = "UnauthorizedRelayError";
+  }
+}
+
+export class SessionLimitReachedError extends Error {
+  constructor(maxSessions: number) {
+    super(`Maximale Anzahl gleichzeitiger MCP-Browsersitzungen (${maxSessions}) erreicht.`);
+    this.name = "SessionLimitReachedError";
+  }
+}
+
+export class ConcurrentCallLimitError extends Error {
+  constructor(sessionId: string, limit: number) {
+    super(`Zu viele gleichzeitige Werkzeugaufrufe (${limit}) für SessionID "${sessionId}".`);
+    this.name = "ConcurrentCallLimitError";
   }
 }
 
@@ -103,6 +121,8 @@ class McpRelay {
   readonly #timeoutMs: number;
   readonly #accessKey: string;
   readonly #gracePeriodMs: number;
+  readonly #maxSessions: number;
+  readonly #maxConcurrentCallsPerSession: number;
   readonly #sessions = new Map<string, RelaySession>();
   readonly #clientToSessionId = new Map<RelayClient, string>();
   readonly #pending = new Map<string, PendingRelayRequest>();
@@ -112,6 +132,11 @@ class McpRelay {
     this.#timeoutMs = options.timeoutMs ?? 60000;
     this.#accessKey = (options.accessKey ?? "").trim();
     this.#gracePeriodMs = options.gracePeriodMs ?? 120000;
+    this.#maxSessions = Math.max(1, Math.floor(options.maxSessions ?? DEFAULT_MAX_SESSIONS));
+    this.#maxConcurrentCallsPerSession = Math.max(
+      1,
+      Math.floor(options.maxConcurrentCallsPerSession ?? DEFAULT_MAX_CONCURRENT_CALLS_PER_SESSION),
+    );
   }
 
   get requiresAccessKey(): boolean {
@@ -179,6 +204,10 @@ class McpRelay {
     // Falls derselbe Client bereits registriert ist, vorherige Zuordnung sauber lösen
     if (this.#clientToSessionId.has(client)) {
       this.unregisterClient(client, true);
+    }
+
+    if (this.#sessions.size >= this.#maxSessions) {
+      throw new SessionLimitReachedError(this.#maxSessions);
     }
 
     let sessionId = createEphemeralSessionId();
@@ -271,6 +300,16 @@ class McpRelay {
     const session = this.#sessions.get(normalizedId);
     if (!session || !session.client) {
       return Promise.reject(new UnknownSessionError(normalizedId));
+    }
+
+    let sessionPending = 0;
+    for (const pending of this.#pending.values()) {
+      if (pending.sessionId === normalizedId) {
+        sessionPending += 1;
+      }
+    }
+    if (sessionPending >= this.#maxConcurrentCallsPerSession) {
+      return Promise.reject(new ConcurrentCallLimitError(normalizedId, this.#maxConcurrentCallsPerSession));
     }
 
     const id = String(this.#nextRequestId++);

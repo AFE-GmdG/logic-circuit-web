@@ -1,5 +1,7 @@
 import type McpWorkerCommand from "../types/mcp/mcpWorkerCommand";
 
+import { toWebSocketUrl } from "../utils/sidecarStorage";
+
 import { MCP_WS_PATH } from "./mcpEvents";
 import McpRemoteRouter, { type McpTabPort } from "./mcpRemoteRouter";
 
@@ -8,7 +10,11 @@ type SharedWorkerGlobalScopeLike = {
   onconnect: ((event: MessageEvent) => void) | null;
 };
 
-function resolveWorkerWsUrl(loc: Location): string {
+function resolveWorkerWsUrl(loc: Location, sidecarBaseUrl?: string): string {
+  const trimmed = sidecarBaseUrl?.trim();
+  if (trimmed && trimmed.length > 0) {
+    return toWebSocketUrl(trimmed, MCP_WS_PATH);
+  }
   const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${loc.host}${MCP_WS_PATH}`;
 }
@@ -16,8 +22,9 @@ function resolveWorkerWsUrl(loc: Location): string {
 const workerScope = globalThis as unknown as SharedWorkerGlobalScopeLike;
 
 const router = new McpRemoteRouter({
-  socketFactory: ({ onOpen, onMessage, onClose }) => {
-    const ws = new WebSocket(resolveWorkerWsUrl(workerScope.location));
+  resolveWsUrl: (sidecarBaseUrl) => resolveWorkerWsUrl(workerScope.location, sidecarBaseUrl),
+  socketFactory: ({ wsUrl, onOpen, onMessage, onClose }) => {
+    const ws = new WebSocket(wsUrl ?? resolveWorkerWsUrl(workerScope.location));
     ws.addEventListener("open", () => {
       onOpen();
     });

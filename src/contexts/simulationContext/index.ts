@@ -20,6 +20,11 @@ import type {
   SimulationSnapshot,
 } from "../../simulation/worker/workerMessages";
 
+export type SimulationCollabBridge = {
+  isCollabSnapshotMode: () => boolean;
+  onSimulationStateChange?: (isSimulating: boolean) => void;
+};
+
 export type SimulationStepResult = {
   stepsCompleted: number;
   maxAppliedEventStep?: number;
@@ -80,6 +85,8 @@ export type SimulationContextType = {
   pullSnapshot: () => Promise<SimulationSnapshot | null>;
   getWireState: (wire: Wire) => State | null;
   playPreviewTone?: (mode: SynthesizerMode, frequencyHz: number) => void;
+  registerCollabBridge?: (bridge: SimulationCollabBridge | null) => void;
+  isCollabSnapshotSimulation?: boolean;
 };
 
 export const DEFAULT_SIMULATION_STATE: SimulationContextType = {
@@ -124,6 +131,7 @@ export const DEFAULT_SIMULATION_STATE: SimulationContextType = {
   pullSnapshot: async () => null,
   getWireState: () => null,
   playPreviewTone: () => {},
+  isCollabSnapshotSimulation: false,
 };
 
 const SimulationContext = React.createContext<SimulationContextType>(DEFAULT_SIMULATION_STATE);

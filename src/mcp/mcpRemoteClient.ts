@@ -5,6 +5,8 @@ import type McpRemoteSharedState from "../types/mcp/mcpRemoteSharedState";
 import type McpWorkerCommand from "../types/mcp/mcpWorkerCommand";
 import type McpWorkerEvent from "../types/mcp/mcpWorkerEvent";
 
+import { resolveEffectiveSidecarBaseUrl, toWebSocketUrl } from "../utils/sidecarStorage";
+
 import { MCP_WS_PATH } from "./mcpEvents";
 import McpRemoteRouter, { type McpSocketFactory } from "./mcpRemoteRouter";
 
@@ -22,10 +24,26 @@ function createTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function resolveRemoteWsUrl(loc?: { protocol: string; host: string }): string {
-  const source = loc ?? (typeof window !== "undefined" ? window.location : { protocol: "http:", host: "localhost" });
-  const protocol = source.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${source.host}${MCP_WS_PATH}`;
+export function resolveRemoteWsUrl(
+  locOrBaseUrl?: { protocol: string; host: string; baseUrl?: string } | string,
+): string {
+  if (typeof locOrBaseUrl === "string") {
+    const effective = resolveEffectiveSidecarBaseUrl({ customBaseUrl: locOrBaseUrl });
+    return effective ? toWebSocketUrl(effective, MCP_WS_PATH) : "";
+  }
+  if (locOrBaseUrl?.baseUrl) {
+    const effective = resolveEffectiveSidecarBaseUrl({
+      customBaseUrl: locOrBaseUrl.baseUrl,
+      location: locOrBaseUrl,
+    });
+    return effective ? toWebSocketUrl(effective, MCP_WS_PATH) : "";
+  }
+  if (locOrBaseUrl) {
+    const protocol = locOrBaseUrl.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${locOrBaseUrl.host}${MCP_WS_PATH}`;
+  }
+  const effective = resolveEffectiveSidecarBaseUrl();
+  return effective ? toWebSocketUrl(effective, MCP_WS_PATH) : "";
 }
 
 export function mapRemoteStateToBridgeStatus(state: McpRemoteSharedState, tabId: string): McpBridgeStatus {
@@ -42,8 +60,9 @@ export function mapRemoteStateToBridgeStatus(state: McpRemoteSharedState, tabId:
 }
 
 function createBrowserSocketFactory(): McpSocketFactory {
-  return ({ onOpen, onMessage, onClose }) => {
-    const ws = new WebSocket(resolveRemoteWsUrl());
+  return ({ wsUrl, onOpen, onMessage, onClose }) => {
+    const targetUrl = wsUrl ?? resolveRemoteWsUrl();
+    const ws = new WebSocket(targetUrl);
     ws.addEventListener("open", () => {
       onOpen();
     });
@@ -116,6 +135,7 @@ class McpRemoteClient {
     }
 
     const router = new McpRemoteRouter({
+      resolveWsUrl: (sidecarBaseUrl) => resolveRemoteWsUrl(sidecarBaseUrl),
       socketFactory: options.socketFactory ?? createBrowserSocketFactory(),
     });
     this.#fallbackRouter = router;
@@ -152,8 +172,8 @@ class McpRemoteClient {
     };
   }
 
-  connect(accessKey?: string): void {
-    this.#postCommand({ type: "connect", tabId: this.#tabId, accessKey });
+  connect(accessKey?: string, sidecarBaseUrl?: string): void {
+    this.#postCommand({ type: "connect", tabId: this.#tabId, accessKey, sidecarBaseUrl });
   }
 
   disconnect(): void {

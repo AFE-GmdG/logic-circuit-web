@@ -250,9 +250,8 @@ function serializeLogicalCircuitRecord(lc: LogicalCircuit): string {
   if (lc.name !== LOGICAL_CIRCUIT_DEFAULTS.name) {
     fields.push(["Name", lc.name]);
   }
-  const resolvedNotation = lc.notation !== "" ? lc.notation : (lc.name || LOGICAL_CIRCUIT_DEFAULTS.name);
-  if (resolvedNotation !== "") {
-    fields.push(["Notation", resolvedNotation]);
+  if (lc.notation !== "") {
+    fields.push(["Notation", lc.notation]);
   }
   if (lc.note !== "") {
     fields.push(["Note", lc.note]);

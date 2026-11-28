@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import CanvasContextProvider from "../contexts/canvasContext/provider";
 import CircuitContextProvider from "../contexts/circuitContext/provider";
+import type { CollabContextType } from "../contexts/collabContext";
 import SimulationContext, { DEFAULT_SIMULATION_STATE } from "../contexts/simulationContext";
 import SimulationContextProvider from "../contexts/simulationContext/provider";
 
@@ -168,5 +169,117 @@ describe("StatusBar", () => {
     expect(html).toContain("sim-btn step-btn active");
     expect(html).toContain("Simulation pausiert");
     expect(html).toContain("class=\"coordinates-group\"");
+  });
+
+  it("zeigt den Collab-Indikator in der StatusBar mit Rolle/Anzahl/Händen und blendet ihn bei isDisabled aus", () => {
+    const createCollabStub = (overrides: Partial<CollabContextType>): CollabContextType => ({
+      isDisabled: false,
+      customSidecarRequired: false,
+      isInSession: false,
+      transportState: "idle",
+      diagnostic: { code: "none", isRecoverable: true, turnPlannedHint: false, details: "" },
+      gracePeriodMs: 15000,
+      sessionId: null,
+      selfPeerId: null,
+      selfRole: null,
+      hostPeerId: null,
+      isHost: false,
+      isMcpBlockedByCollab: false,
+      activeSidecarUrl: null,
+      isEphemeralSidecar: false,
+      runtimeConfig: null,
+      displayName: "",
+      participants: [],
+      selfParticipant: null,
+      raisedHandCount: 0,
+      activeInvites: [],
+      pendingInviteLink: null,
+      lastError: null,
+      lastRejectionMessage: null,
+      sessionClosedNotice: null,
+      isParticipantsPanelOpen: false,
+      startHostSession: async () => false,
+      joinSession: async () => false,
+      endOrLeaveSession: () => {},
+      createInviteLink: async () => null,
+      revokeInviteLink: async () => false,
+      setParticipantRole: async () => false,
+      moderateParticipantName: async () => false,
+      renameSelf: async () => false,
+      toggleHandRaised: async () => false,
+      lowerParticipantHand: async () => false,
+      kickParticipant: async () => false,
+      transferHostRole: () => false,
+      requestResync: async () => false,
+      setParticipantsPanelOpen: () => {},
+      clearPendingInviteLink: () => {},
+      clearError: () => {},
+      dismissSessionClosedNotice: () => {},
+      ...overrides,
+    });
+
+    const idleHtml = renderToStaticMarkup(
+      <CircuitContextProvider>
+        <SimulationContextProvider>
+          <CanvasContextProvider>
+            <StatusBar collabOverride={createCollabStub({ isInSession: false })} />
+          </CanvasContextProvider>
+        </SimulationContextProvider>
+      </CircuitContextProvider>,
+    );
+    expect(idleHtml).toContain("data-testid=\"status-bar-collab-btn\"");
+    expect(idleHtml).toContain("data-collab-active=\"false\"");
+    expect(idleHtml).toContain("Collab");
+
+    const activeHtml = renderToStaticMarkup(
+      <CircuitContextProvider>
+        <SimulationContextProvider>
+          <CanvasContextProvider>
+            <StatusBar
+              collabOverride={createCollabStub({
+                isInSession: true,
+                transportState: "connected",
+                selfRole: "host",
+                isHost: true,
+                raisedHandCount: 2,
+                participants: [
+                  {
+                    peerId: "p1",
+                    role: "host",
+                    displayName: "Andreas",
+                    nameLocked: false,
+                    handRaised: false,
+                    connectionState: "connected",
+                  },
+                  {
+                    peerId: "p2",
+                    role: "guest",
+                    displayName: "Berta",
+                    nameLocked: false,
+                    handRaised: true,
+                    connectionState: "connected",
+                  },
+                ],
+              })}
+            />
+          </CanvasContextProvider>
+        </SimulationContextProvider>
+      </CircuitContextProvider>,
+    );
+    expect(activeHtml).toContain("data-collab-active=\"true\"");
+    expect(activeHtml).toContain("Host (2)");
+    expect(activeHtml).toContain("data-testid=\"status-bar-collab-hands\"");
+    expect(activeHtml).toContain("✋ 2");
+
+    const disabledHtml = renderToStaticMarkup(
+      <CircuitContextProvider>
+        <SimulationContextProvider>
+          <CanvasContextProvider>
+            <StatusBar collabOverride={createCollabStub({ isDisabled: true })} />
+          </CanvasContextProvider>
+        </SimulationContextProvider>
+      </CircuitContextProvider>,
+    );
+    expect(disabledHtml).not.toContain("data-testid=\"status-bar-collab-btn\"");
   });
 });

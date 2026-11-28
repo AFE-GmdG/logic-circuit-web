@@ -721,4 +721,61 @@ describe("PropertyDialog Component", () => {
     const resetJamB = resetPlaced.jams.find((j) => j.pin.pinId === "pin-bot")!;
     expect(resetJamA.y).toBeLessThan(resetJamB.y);
   });
+
+  it("preserves explicit empty circuit notation and sidebar pin jamNotation behavior (B-008)", () => {
+    const project = createEmptyCircuitProject("B008 Test", "Main", "main");
+    let capturedCtx!: React.ContextType<typeof CircuitContext>;
+    renderToStaticMarkup(
+      <CircuitContextProvider initialProject={project}>
+        <TestConsumer onContext={(ctx) => { capturedCtx = ctx; }} />
+      </CircuitContextProvider>,
+    );
+
+    const created = capturedCtx.createCircuits([
+      { name: "LedPanel", notation: "" },
+    ])[0];
+    expect(created.notation).toBe("");
+
+    // Explizit geleerte Schaltungs-Notation bleibt auch bei späterer Umbenennung leer
+    React.act(() => {
+      capturedCtx.updateCircuitProperties("main", { notation: "" });
+    });
+    expect(capturedCtx.currentCircuit.notation).toBe("");
+
+    React.act(() => {
+      capturedCtx.updateCircuitProperties("main", { name: "MainRenamed" });
+    });
+    expect(capturedCtx.currentCircuit.name).toBe("MainRenamed");
+    expect(capturedCtx.currentCircuit.notation).toBe("");
+
+    // Pin aus Seitenleiste mit Beschriftung "X" erhält name="X" und jamNotation="X"
+    let pinWithLabelSymId = "";
+    let pinEmptyLabelSymId = "";
+    React.act(() => {
+      const sym1 = capturedCtx.addSymbol({ type: "pinIn", name: "X", notation: "X" }, { x: 2, y: 2 });
+      const sym2 = capturedCtx.addSymbol({ type: "pinIn", name: "Pin (Eingang)", notation: "" }, { x: 2, y: 6 });
+      pinWithLabelSymId = sym1.circuitSymbolId;
+      pinEmptyLabelSymId = sym2.circuitSymbolId;
+    });
+
+    const pin1Id = capturedCtx.currentCircuit.circuitSymbols.find(
+      (s) => s.circuitSymbolId === pinWithLabelSymId,
+    )?.circuitId;
+    const pin2Id = capturedCtx.currentCircuit.circuitSymbols.find(
+      (s) => s.circuitSymbolId === pinEmptyLabelSymId,
+    )?.circuitId;
+    const pin1 = capturedCtx.project.pins.find((p) => p.pinId === pin1Id);
+    const pin2 = capturedCtx.project.pins.find((p) => p.pinId === pin2Id);
+    expect(pin1?.name).toBe("X");
+    expect(pin1?.jamNotation).toBe("X");
+    expect(pin2?.name).toBe("X1");
+    expect(pin2?.jamNotation).toBe("");
+
+    // Explizites Leeren von jamNotation bleibt erhalten
+    React.act(() => {
+      capturedCtx.updateCircuitSymbolProperties(pinWithLabelSymId, { jamNotation: "" });
+    });
+    const clearedPin1 = capturedCtx.project.pins.find((p) => p.pinId === pin1!.pinId);
+    expect(clearedPin1?.jamNotation).toBe("");
+  });
 });

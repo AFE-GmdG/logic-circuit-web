@@ -22,11 +22,14 @@
 
     // Clean Explorer: Hide Things we don't care about
     "files.exclude": {
+      ".continue": true,
       ".git": true,
+      ".github": true,
       "dist": false, // sometimes useful to see, hide when not necessary
       "node_modules": true, // only clutter
-      "*eslint*": false,
+      "*eslint*": true,
       ".gitignore": true,
+      ".gitmodules": true,
       "*lock.json": true,
       "*.lock": true,
       "*.log": true,
@@ -98,7 +101,10 @@
         "foreground": "#FFFFFF",
         "type": "whole-line"
       }
-    }
+    },
+    "i18n-ally.localesPaths": [
+      "src/locales"
+    ]
   },
   /* ---------------------- */
   /* --- Launch Section --- */

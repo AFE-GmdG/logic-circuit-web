@@ -1,4 +1,7 @@
 import i18n from "../i18n";
+import { MCP_STREAMABLE_HTTP_PATH } from "../mcp/mcpEvents";
+
+import { notifySidecarSettingsChanged } from "./sidecarStorage";
 
 export const MCP_ACCESS_KEY_STORAGE_KEY = "logicCircuit.mcp.accessKey";
 
@@ -26,6 +29,7 @@ export function saveMcpAccessKey(accessKey: string, storageKey = MCP_ACCESS_KEY_
     } else {
       window.localStorage.setItem(storageKey, trimmed);
     }
+    notifySidecarSettingsChanged();
   } catch {
     // Speicherfehler (z. B. Private Mode) still ignorieren
   }
@@ -38,6 +42,7 @@ export function clearMcpAccessKey(storageKey = MCP_ACCESS_KEY_STORAGE_KEY): void
   }
   try {
     window.localStorage.removeItem(storageKey);
+    notifySidecarSettingsChanged();
   } catch {
     // Speicherfehler still ignorieren
   }
@@ -48,22 +53,36 @@ export function buildRemoteChatPrompt(sessionId: string): string {
   return i18n.t("mcpPopover.chatPromptTemplate", { sessionId });
 }
 
-// Erzeugt die statische mcp_config.json-Vorlage bewusst ohne feste SessionID
-export function buildRemoteMcpConfigJson(origin: string, hasAccessKey = false): string {
-  const env: Record<string, string> = {
-    LOGIC_CIRCUIT_URL: origin,
+// Erzeugt die Streamable-HTTP-Konfiguration für lokale Dev-Instanzen
+export function buildLocalMcpConfigJson(port = 5173): string {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        "logic-circuit": {
+          url: `http://localhost:${port}${MCP_STREAMABLE_HTTP_PATH}`,
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+// Erzeugt die statische Streamable-HTTP-mcp_config.json-Vorlage ohne feste SessionID
+export function buildRemoteMcpConfigJson(baseUrl: string, hasAccessKey = false): string {
+  const normalizedBase = baseUrl.trim().replace(/\/+$/, "");
+  const serverEntry: { url: string; headers?: Record<string, string> } = {
+    url: `${normalizedBase}${MCP_STREAMABLE_HTTP_PATH}`,
   };
   if (hasAccessKey) {
-    env.LOGIC_CIRCUIT_TOKEN = i18n.t("mcpPopover.accessKeyTokenPlaceholder");
+    serverEntry.headers = {
+      Authorization: `Bearer ${i18n.t("mcpPopover.accessKeyTokenPlaceholder")}`,
+    };
   }
   return JSON.stringify(
     {
       mcpServers: {
-        "logic-circuit-remote": {
-          command: "node",
-          args: ["server/bin/mcpCli.mjs"],
-          env,
-        },
+        "logic-circuit": serverEntry,
       },
     },
     null,

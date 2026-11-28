@@ -26,6 +26,7 @@ export type McpRemoteSocket = {
 };
 
 export type McpSocketFactory = (callbacks: {
+  wsUrl?: string;
   onOpen: () => void;
   onMessage: (raw: string) => void;
   onClose: (code: number, reason: string) => void;
@@ -33,6 +34,7 @@ export type McpSocketFactory = (callbacks: {
 
 type McpRemoteRouterOptions = {
   socketFactory: McpSocketFactory;
+  resolveWsUrl?: (sidecarBaseUrl?: string) => string;
   heartbeatIntervalMs?: number;
   baseReconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
@@ -43,6 +45,7 @@ const WS_CLOSE_UNAUTHORIZED = 4001;
 // Zentraler Router für Multi-Tab-Koordination (im SharedWorker oder im Single-Tab-Fallback)
 class McpRemoteRouter {
   readonly #socketFactory: McpSocketFactory;
+  readonly #resolveWsUrl?: (sidecarBaseUrl?: string) => string;
   readonly #heartbeatIntervalMs: number;
   readonly #baseReconnectDelayMs: number;
   readonly #maxReconnectDelayMs: number;
@@ -57,6 +60,7 @@ class McpRemoteRouter {
   #sessionId: string | null = null;
   #reconnectToken: string | null = null;
   #accessKey = "";
+  #sidecarBaseUrl: string | undefined;
   #lastError: string | null = null;
   #reconnectAttempt = 0;
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +68,7 @@ class McpRemoteRouter {
 
   constructor(options: McpRemoteRouterOptions) {
     this.#socketFactory = options.socketFactory;
+    this.#resolveWsUrl = options.resolveWsUrl;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs ?? 25000;
     this.#baseReconnectDelayMs = options.baseReconnectDelayMs ?? 1000;
     this.#maxReconnectDelayMs = options.maxReconnectDelayMs ?? 30000;
@@ -76,6 +81,7 @@ class McpRemoteRouter {
       connectedTabCount: this.#tabs.size,
       sessionId: this.#sessionId,
       error: this.#lastError,
+      sidecarBaseUrl: this.#sidecarBaseUrl ?? null,
     };
   }
 
@@ -90,7 +96,7 @@ class McpRemoteRouter {
         this.unregisterTab(command.tabId);
         break;
       case "connect":
-        this.connect(command.tabId, command.accessKey);
+        this.connect(command.tabId, command.accessKey, command.sidecarBaseUrl);
         break;
       case "disconnect":
         this.disconnect();
@@ -137,17 +143,25 @@ class McpRemoteRouter {
     this.#broadcastState();
   }
 
-  connect(tabId: string, accessKey?: string): void {
+  connect(tabId: string, accessKey?: string, sidecarBaseUrl?: string): void {
     const normalizedKey = (accessKey ?? "").trim();
+    const normalizedUrl = sidecarBaseUrl?.trim() || undefined;
     const keyChanged = normalizedKey !== this.#accessKey;
+    const urlChanged = normalizedUrl !== this.#sidecarBaseUrl;
+
+    if (urlChanged && this.#socket) {
+      this.disconnect();
+    }
+
     this.#accessKey = normalizedKey;
+    this.#sidecarBaseUrl = normalizedUrl;
     this.#desiredConnected = true;
     this.#lastError = null;
     if (this.#tabs.has(tabId)) {
       this.#activeTabId = tabId;
     }
 
-    if (keyChanged && !this.#socketOpen) {
+    if ((keyChanged || urlChanged) && !this.#socketOpen) {
       this.#sessionId = null;
       this.#reconnectToken = null;
     }
@@ -213,7 +227,9 @@ class McpRemoteRouter {
 
     let socketRef: McpRemoteSocket | null = null;
     try {
+      const wsUrl = this.#resolveWsUrl?.(this.#sidecarBaseUrl);
       socketRef = this.#socketFactory({
+        wsUrl,
         onOpen: () => {
           if (this.#socket !== socketRef) {
             return;

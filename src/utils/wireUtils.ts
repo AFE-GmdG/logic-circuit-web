@@ -17,6 +17,7 @@ import i18n from "../i18n";
 
 import { buildConductorMap, gridPointKey, syncProjectLogicalCircuits } from "./circuitLayout";
 import { GRID_SIZE } from "./coordinateSystem";
+import { generateEntityUuid } from "./entityId";
 
 // Fangradius um einen Pin oder Leitungsendpunkt in Canvas-Pixeln (analog zu EditorDiagram.IsPinClose)
 export const PIN_CLICK_RADIUS_PX = 7.5;
@@ -29,7 +30,7 @@ export function createWire(
   logicalCircuitId: string,
   point1: GridPoint,
   point2: GridPoint,
-  wireId = `wire-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  wireId = generateEntityUuid(),
   markedBad = false,
 ): Wire {
   return {

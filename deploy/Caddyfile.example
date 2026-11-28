@@ -1,15 +1,15 @@
-# Beispiel-Konfiguration für Caddy mit statischem Web-Container und Remote-MCP-Sidecar.
+# Beispiel-Konfiguration für Caddy mit statischem Web-Container und Sidecar-Relay (MCP + Collab).
 # Die statischen Assets werden von logiccircuit-web (Port 8080) ausgeliefert;
-# /ws-mcp und /__mcp/* werden an den MCP-Sidecar (logiccircuit-mcp:3001) geleitet.
+# alle Sidecar-Endpunkte (/mcp, /__mcp/*, /ws-mcp, /__collab/*, /ws-collab) laufen an logiccircuit-mcp:3001.
 
 circuit.example.com {
-	@mcp path /ws-mcp /__mcp/*
+	@sidecar path /mcp /__mcp/* /ws-mcp /__collab/* /ws-collab
 
-	# GDPR: Optional Access-Logs für MCP-Pfade überspringen (ab Caddy 2.7+),
+	# GDPR: Optional Access-Logs für Sidecar-Pfade überspringen (ab Caddy 2.7+),
 	# sofern für diese Site ein log-Block aktiv ist:
-	# log_skip @mcp
+	# log_skip @sidecar
 
-	handle @mcp {
+	handle @sidecar {
 		reverse_proxy logiccircuit-mcp:3001 {
 			# Ausreichende Timeouts für längere Simulationen und ruhige WebSockets
 			transport http {

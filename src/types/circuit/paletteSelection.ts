@@ -15,6 +15,8 @@ type PaletteSelection = {
   type: PaletteGateType | "subCircuit" | "textNote";
   inputCount?: number;
   subCircuitId?: string;
+  libraryCircuitId?: string;
+  isBuiltInLibrary?: boolean;
   name: string;
   notation?: string;
   jamNotation?: string;

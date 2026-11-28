@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 
 import type McpBridgeStatus from "../../types/mcp/mcpBridgeStatus";
 
-import { buildRemoteChatPrompt, buildRemoteMcpConfigJson } from "../../utils/mcpStorage";
+import { buildRemoteChatPrompt } from "../../utils/mcpStorage";
+import { validateSidecarBaseUrl } from "../../utils/sidecarStorage";
+import type { SidecarVersionCheckResult } from "../../utils/sidecarVersion";
 
 export type McpRemotePopoverProps = Omit<React.ComponentPropsWithoutRef<"div">, "children"> & {
   isOpen: boolean;
@@ -14,9 +16,12 @@ export type McpRemotePopoverProps = Omit<React.ComponentPropsWithoutRef<"div">, 
   connectedTabCount: number;
   error: string | null;
   isSharedWorkerSupported: boolean;
-  accessKey: string;
-  onAccessKeyChange: (nextKey: string) => void;
-  onClearAccessKey: () => void;
+  sidecarUrl?: string;
+  customSidecarRequired?: boolean;
+  isBlockedByCollab?: boolean;
+  versionCheck?: SidecarVersionCheckResult | null;
+  onOpenSettings?: () => void;
+  onOpenSidecarDownload?: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
   onActivateThisTab: () => void;
@@ -49,7 +54,7 @@ function copyToClipboard(text: string): Promise<boolean> {
   return Promise.resolve(false);
 }
 
-// Kompaktes Verbindungs-Popover für Remote MCP: Opt-in, Access-Key, Tab-Übernahme & Chat-Prompt-Generator
+// Kompaktes Verbindungs-Popover für Remote MCP: Verbinden/Trennen, KI-Chat-Prompt & Sprung in die Einstellungen
 const McpRemotePopover = styled(({
   isOpen,
   status,
@@ -57,9 +62,12 @@ const McpRemotePopover = styled(({
   connectedTabCount,
   error,
   isSharedWorkerSupported,
-  accessKey,
-  onAccessKeyChange,
-  onClearAccessKey,
+  sidecarUrl = "",
+  customSidecarRequired = false,
+  isBlockedByCollab = false,
+  versionCheck = null,
+  onOpenSettings,
+  onOpenSidecarDownload,
   onConnect,
   onDisconnect,
   onActivateThisTab,
@@ -67,8 +75,7 @@ const McpRemotePopover = styled(({
   ...other
 }: McpRemotePopoverProps) => {
   const { t } = useTranslation();
-  const [copiedTarget, setCopiedTarget] = React.useState<"prompt" | "config" | null>(null);
-  const [showConfig, setShowConfig] = React.useState(false);
+  const [isPromptCopied, setIsPromptCopied] = React.useState(false);
 
   React.useEffect(
     () => {
@@ -92,13 +99,13 @@ const McpRemotePopover = styled(({
 
   React.useEffect(
     () => {
-      if (!copiedTarget) {
+      if (!isPromptCopied) {
         return undefined;
       }
-      const timer = setTimeout(() => setCopiedTarget(null), 2000);
+      const timer = setTimeout(() => setIsPromptCopied(false), 2000);
       return () => clearTimeout(timer);
     },
-    [copiedTarget],
+    [isPromptCopied],
   );
 
   if (!isOpen) {
@@ -109,9 +116,13 @@ const McpRemotePopover = styled(({
     status === "remote-connecting" ||
     status === "remote-active-self" ||
     status === "remote-active-other";
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://circuit.example.com";
+  const urlValidation = validateSidecarBaseUrl(sidecarUrl);
+  const missingRequiredUrl = customSidecarRequired && sidecarUrl.trim().length === 0;
+  const isConnectDisabled = !urlValidation.ok || missingRequiredUrl;
   const chatPrompt = sessionId ? buildRemoteChatPrompt(sessionId) : "";
-  const configJson = buildRemoteMcpConfigJson(origin, accessKey.trim().length > 0);
+  const showVersionNotice =
+    versionCheck !== null &&
+    (versionCheck.relation === "server-outdated" || versionCheck.relation === "client-outdated");
 
   const handleCopyPrompt = () => {
     if (!chatPrompt) {
@@ -119,15 +130,7 @@ const McpRemotePopover = styled(({
     }
     void copyToClipboard(chatPrompt).then((ok) => {
       if (ok) {
-        setCopiedTarget("prompt");
-      }
-    });
-  };
-
-  const handleCopyConfig = () => {
-    void copyToClipboard(configJson).then((ok) => {
-      if (ok) {
-        setCopiedTarget("config");
+        setIsPromptCopied(true);
       }
     });
   };
@@ -157,9 +160,27 @@ const McpRemotePopover = styled(({
         </span>
       </div>
 
-      {error && (
+      {isBlockedByCollab && (
+        <div className="error-box" role="status" data-testid="mcp-collab-blocked-hint">
+          {t("mcpPopover.blockedByCollabNotice")}
+        </div>
+      )}
+
+      {error && !isBlockedByCollab && (
         <div className="error-box" role="alert">
           {error}
+        </div>
+      )}
+
+      {!urlValidation.ok && urlValidation.error && (
+        <div className="error-box" role="alert" data-testid="mcp-sidecar-url-error">
+          {urlValidation.error}
+        </div>
+      )}
+
+      {missingRequiredUrl && (
+        <div className="field-hint" data-testid="mcp-sidecar-required-hint">
+          {t("mcpPopover.sidecarUrlRequiredHint")}
         </div>
       )}
 
@@ -167,6 +188,7 @@ const McpRemotePopover = styled(({
         <button
           type="button"
           className="claim-tab-btn"
+          disabled={isBlockedByCollab}
           onClick={onActivateThisTab}
         >
           {t("mcpPopover.claimTabButton")}
@@ -184,42 +206,43 @@ const McpRemotePopover = styled(({
             className="copy-btn"
             onClick={handleCopyPrompt}
           >
-            {copiedTarget === "prompt" ? t("mcpPopover.chatPromptCopied") : t("mcpPopover.copyChatPrompt")}
+            {isPromptCopied ? t("mcpPopover.chatPromptCopied") : t("mcpPopover.copyChatPrompt")}
           </button>
         </div>
       )}
 
-      <div className="key-section">
-        <label className="section-label" htmlFor="mcp-remote-access-key">
-          {t("mcpPopover.accessKeyLabel")}
-        </label>
-        <div className="key-input-row">
-          <input
-            id="mcp-remote-access-key"
-            type="password"
-            className="key-input"
-            placeholder={t("mcpPopover.accessKeyPlaceholder")}
-            value={accessKey}
-            onChange={(event) => onAccessKeyChange(event.target.value)}
-            disabled={isConnectedOrConnecting}
-          />
-          {accessKey.trim().length > 0 && !isConnectedOrConnecting && (
+      {showVersionNotice && versionCheck && (
+        <div className="version-banner" role="status" data-testid="mcp-version-banner">
+          <span>
+            {versionCheck.relation === "server-outdated"
+              ? t("mcpPopover.versionOutdatedNotice", {
+                serverVersion: versionCheck.serverVersion ?? "?",
+                clientVersion: versionCheck.clientVersion,
+              })
+              : t("mcpPopover.versionClientOutdatedNotice", {
+                serverVersion: versionCheck.serverVersion ?? "?",
+                clientVersion: versionCheck.clientVersion,
+              })}
+          </span>
+          {onOpenSidecarDownload && (
             <button
               type="button"
               className="secondary-btn"
-              onClick={onClearAccessKey}
+              data-testid="mcp-version-download-btn"
+              onClick={onOpenSidecarDownload}
             >
-              {t("mcpPopover.clearKeyButton")}
+              {t("mcpPopover.versionDownloadButton")}
             </button>
           )}
         </div>
-      </div>
+      )}
 
       <div className="action-row">
         {!isConnectedOrConnecting ? (
           <button
             type="button"
             className="primary-btn"
+            disabled={isConnectDisabled || isBlockedByCollab}
             onClick={onConnect}
           >
             {t("mcpPopover.connectButton")}
@@ -234,28 +257,17 @@ const McpRemotePopover = styled(({
           </button>
         )}
 
-        <button
-          type="button"
-          className="secondary-btn"
-          onClick={() => setShowConfig((prev) => !prev)}
-        >
-          {showConfig ? t("mcpPopover.hideConfigButton") : t("mcpPopover.showConfigButton")}
-        </button>
-      </div>
-
-      {showConfig && (
-        <div className="config-section">
-          <div className="section-label">{t("mcpPopover.configLabel")}</div>
-          <pre className="config-preview">{configJson}</pre>
+        {onOpenSettings && (
           <button
             type="button"
-            className="copy-btn"
-            onClick={handleCopyConfig}
+            className="secondary-btn"
+            data-testid="mcp-open-settings-btn"
+            onClick={onOpenSettings}
           >
-            {copiedTarget === "config" ? t("mcpPopover.configCopied") : t("mcpPopover.copyConfig")}
+            {t("mcpPopover.openSettingsButton")}
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <p className="privacy-note">
         {t("mcpPopover.privacyNote")}
@@ -268,7 +280,7 @@ const McpRemotePopover = styled(({
   left: "50%",
   transform: "translateX(-50%)",
   zIndex: 100,
-  width: "24rem",
+  width: "22rem",
   maxWidth: "calc(100vw - 2rem)",
   padding: "0.85rem",
   display: "flex",
@@ -361,6 +373,26 @@ const McpRemotePopover = styled(({
     fontSize: "0.75rem",
   },
 
+  "& > .field-hint": {
+    fontSize: "0.72rem",
+    lineHeight: 1.35,
+    color: "var(--color-text-muted)",
+  },
+
+  "& > .version-banner": {
+    padding: "0.45rem 0.6rem",
+    borderRadius: "0.25rem",
+    border: "1px solid var(--color-warning-border)",
+    backgroundColor: "var(--color-warning-bg)",
+    color: "var(--color-text-primary)",
+    fontSize: "0.74rem",
+    lineHeight: 1.35,
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.35rem",
+    alignItems: "flex-start",
+  },
+
   "& > .claim-tab-btn": {
     padding: "0.45rem 0.7rem",
     borderRadius: "0.3rem",
@@ -376,7 +408,7 @@ const McpRemotePopover = styled(({
     },
   },
 
-  "& > .prompt-section, & > .key-section, & > .config-section": {
+  "& > .prompt-section": {
     display: "flex",
     flexDirection: "column",
     gap: "0.35rem",
@@ -385,9 +417,7 @@ const McpRemotePopover = styled(({
       fontSize: "0.74rem",
       color: "var(--color-text-secondary)",
     },
-  },
 
-  "& > .prompt-section": {
     "& > .prompt-preview": {
       padding: "0.45rem 0.55rem",
       borderRadius: "0.25rem",
@@ -410,23 +440,6 @@ const McpRemotePopover = styled(({
     },
   },
 
-  "& > .key-section > .key-input-row": {
-    display: "flex",
-    gap: "0.35rem",
-
-    "& > .key-input": {
-      flex: 1,
-      minWidth: 0,
-      padding: "0.35rem 0.5rem",
-      borderRadius: "0.25rem",
-      border: "1px solid var(--color-border-subtle)",
-      backgroundColor: "var(--color-bg-base)",
-      color: "var(--color-text-primary)",
-      fontFamily: "var(--font-family-mono)",
-      fontSize: "0.74rem",
-    },
-  },
-
   "& > .action-row": {
     display: "flex",
     alignItems: "center",
@@ -443,8 +456,13 @@ const McpRemotePopover = styled(({
       fontSize: "0.78rem",
       cursor: "pointer",
 
-      "&:hover": {
+      "&:hover:not(:disabled)": {
         backgroundColor: "var(--color-accent-primary-hover)",
+      },
+
+      "&:disabled": {
+        opacity: 0.45,
+        cursor: "not-allowed",
       },
     },
 
@@ -472,30 +490,6 @@ const McpRemotePopover = styled(({
     "&:hover": {
       color: "var(--color-text-primary)",
       borderColor: "var(--color-border-strong)",
-    },
-  },
-
-  "& > .config-section": {
-    "& > .config-preview": {
-      margin: 0,
-      padding: "0.45rem 0.55rem",
-      borderRadius: "0.25rem",
-      border: "1px solid var(--color-border-subtle)",
-      backgroundColor: "var(--color-bg-base)",
-      fontFamily: "var(--font-family-mono)",
-      fontSize: "0.68rem",
-      overflowX: "auto",
-    },
-
-    "& > .copy-btn": {
-      alignSelf: "flex-start",
-      padding: "0.3rem 0.6rem",
-      borderRadius: "0.25rem",
-      border: "1px solid var(--color-border-strong)",
-      backgroundColor: "var(--color-bg-elevated)",
-      color: "var(--color-text-primary)",
-      fontSize: "0.74rem",
-      cursor: "pointer",
     },
   },
 

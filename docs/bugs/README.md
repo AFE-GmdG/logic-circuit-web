@@ -8,7 +8,12 @@ In diesem Verzeichnis werden Fehlerberichte und Incident-Analysen nach folgendem
 
 ## Erfasste Bugs
 
-> 📚 Alle bis Version 1.1.0 behobenen Fehlerberichte (`B-001` bis `B-004`) sind in der Chronik **[Was bisher geschah – Release-Chronik](../history.md)** dokumentiert. Aktuell liegen keine offenen Fehlerberichte vor.
+- ✅ [B-008: Leere Beschriftung bei Schaltungen und Pins erzwingt Namens-Fallback statt Ausblenden](B-008-leere-beschriftung-fuer-schaltungen-und-pins-ausblenden.md) *(Geschlossen – Niedrig)*
+- ✅ [B-007: Bibliothek „Metadaten bearbeiten“ lädt und speichert Schaltungseigenschaften unvollständig](B-007-bibliothek-metadaten-dialog-laedt-und-speichert-unvollstaendig.md) *(Geschlossen – Mittel)*
+- ✅ [B-006: Subschaltungs-Vorschau in Seitenleiste & Drag-Vorschau sowie störendes Browser-DragImage](B-006-schaltungs-vorschau-seitenleiste-drag-und-browser-dragimage.md) *(Geschlossen – Niedrig)*
+- ✅ [B-005: Paletten-Kategorien kollidieren bei Namensgleichheit mit festen Kategorien](B-005-paletten-kategorien-kollision-bei-namensgleichheit.md) *(Geschlossen – Niedrig)*
+
+> 📚 Alle bis Version 1.1.0 behobenen Fehlerberichte (`B-001` bis `B-004`) sind in der Chronik **[Was bisher geschah – Release-Chronik](../history.md)** dokumentiert.
 
 ## Vorlage für Bug-Reports
 
@@ -37,4 +42,3 @@ Technische Ursachenforschung (z. B. Gatter-Timing, Oszillationserkennung, SVG-Re
 - [ ] Verifikation mit `yarn errorcheck` & `yarn lint`
 - [ ] Test im Browser
 ```
-

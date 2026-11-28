@@ -101,6 +101,17 @@
       "invalidProjectFileType": "Bitte eine gültige .lcweb-, .CircuitProject- oder .xml-Datei auswählen.",
       "saveFailed": "Das Projekt konnte nicht gespeichert werden.",
       "desktopExportFailed": "Der Desktop-Export konnte nicht gespeichert werden."
+    },
+    "libraryMode": {
+      "badgeLabel": "Bibliotheksmodus",
+      "saveToLibrary": "Bibliothek speichern",
+      "saveToLibraryTooltip": "Änderungen direkt in die verknüpfte .lclib-Bibliothek speichern",
+      "exitLibraryMode": "Zurück zum Projekt",
+      "exitLibraryModeTooltip": "Bibliotheks-Bearbeitungsmodus verlassen und zum geöffneten Projekt zurückkehren",
+      "unsavedExitConfirmTitle": "Ungespeicherte Bibliotheksänderungen",
+      "unsavedExitConfirmMessage": "In der Bibliotheksschaltung gibt es ungespeicherte Änderungen. Möchten Sie diese verwerfen und zum Projekt zurückkehren?",
+      "unsavedExitConfirmButton": "Verwerfen & Zurück",
+      "blockedInLibraryModeTooltip": "Im Bibliotheks-Bearbeitungsmodus nicht verfügbar"
     }
   },
   "menu": {
@@ -159,6 +170,16 @@
       "fileExportImageTooltip": "Exportiert die aktuelle Schaltung als PNG (1:1) oder SVG",
       "fileProjectSettings": "Projekt-Einstellungen...",
       "fileProjectSettingsTooltip": "Projektname, Beschreibung und Ziel-Taktfrequenz (Hz) bearbeiten",
+      "fileCollabStart": "Kollaborations-Session starten...",
+      "fileCollabStartTooltip": "Neue Live-Kollaborations-Session starten und 5-Minuten-Einladungslinks erzeugen",
+      "fileCollabJoin": "Per Einladungslink beitreten...",
+      "fileCollabJoinTooltip": "Einer aktiven Kollaborations-Session per Einladungslink oder Token beitreten",
+      "fileCollabPanel": "Teilnehmer-Panel anzeigen",
+      "fileCollabPanelTooltip": "Schwebendes Teilnehmer-Panel ein- oder ausblenden",
+      "fileCollabEndHost": "Kollaborations-Session beenden",
+      "fileCollabEndHostTooltip": "Aktive Kollaborations-Session für alle Teilnehmer beenden",
+      "fileCollabLeavePeer": "Kollaborations-Session verlassen",
+      "fileCollabLeavePeerTooltip": "Session verlassen und die lokale Kopie eigenständig weiterbearbeiten",
       "editUndo": "Rückgängig",
       "editUndoDisabledTooltip": "Keine Aktionen zum Rückgängigmachen vorhanden",
       "editRedo": "Wiederherstellen",
@@ -200,7 +221,11 @@
       "viewOptionsTooltip": "Startverhalten, Standard-Taktfrequenz und Projektverzeichnisse konfigurieren",
       "helpPrivacy": "Datenschutz (GDPR)...",
       "helpPrivacyTooltip": "Hinweise zu Datenverarbeitung, Hosting und Verantwortlichem",
-      "helpShortcuts": "Tastaturkürzel & Über Logic Circuit Web..."
+      "helpShortcuts": "Tastaturkürzel & Über Logic Circuit Web...",
+      "helpByoSidecar": "BYO SideCar...",
+      "helpByoSidecarTooltip": "Eigene Sidecar-URL, lokale Zugangsschlüssel (MCP & Collab) und Versionsstatus konfigurieren",
+      "helpDownloadSidecar": "Download SideCar...",
+      "helpDownloadSidecarTooltip": "Eigenständiges Sidecar-Paket (.zip) samt Node-22- & Docker-Startanleitung herunterladen"
     }
   },
   "statusBar": {
@@ -222,6 +247,13 @@
     "simOscillating": "Oszillation erkannt (Schaltung schwingt unlösbar)",
     "simPaused": "Simulation pausiert",
     "simRunning": "Simulation aktiv",
+    "simSnapshotBadge": "Snapshot",
+    "simSnapshotBadgePending": "Snapshot · +{{count}}",
+    "simSnapshotBadgeResync": "Snapshot · ↻",
+    "simSnapshotTooltip": "Lokale Snapshot-Simulation: RAM-Änderungen werden nicht in die Kollaborations-Session zurückgeschrieben",
+    "simSnapshotPendingTooltip_one": "1 neue Team-Änderung im Hintergrund – wird beim Beenden der Simulation automatisch übernommen",
+    "simSnapshotPendingTooltip_other": "{{count}} neue Team-Änderungen im Hintergrund – werden beim Beenden der Simulation automatisch übernommen",
+    "simSnapshotResyncTooltip": "Team-Stand wird beim Beenden der lokalen Simulation automatisch mit dem Host abgeglichen",
     "zoomOutTitle": "Verkleinern (Zoom Out)",
     "zoomResetTitle": "Zoom auf 100 % zurücksetzen",
     "zoomInTitle": "Vergrößern (Zoom In)",
@@ -241,7 +273,18 @@
       "titleRemoteConnecting": "MCP (Remote): Verbindung zum Relay wird aufgebaut",
       "titleRemoteActiveSelf": "MCP (Remote): Verbunden – dieser Tab beantwortet MCP-Anfragen",
       "titleRemoteActiveOther": "MCP (Remote): Verbunden – ein anderer Tab beantwortet MCP-Anfragen",
-      "titleRemoteError": "MCP (Remote): Verbindungs- oder Autorisierungsfehler"
+      "titleRemoteError": "MCP (Remote): Verbindungs- oder Autorisierungsfehler",
+      "labelBlockedByCollab": "MCP: Nur Host",
+      "titleBlockedByCollab": "MCP ist während einer aktiven Kollaborations-Session ausschließlich dem Host vorbehalten"
+    },
+    "collab": {
+      "startLabel": "Collab",
+      "startTitle": "WebRTC-Kollaborations-Session starten",
+      "activeLabel": "{{role}} ({{count}})",
+      "activeTitle": "Kollaboration aktiv ({{role}}, {{count}} Teilnehmer) – klicken zum Ein-/Ausklappen",
+      "roleHost": "Host",
+      "roleCollaborator": "Kollab.",
+      "roleGuest": "Gast"
     },
     "language": {
       "ariaLabel": "Sprache wählen (aktuell: {{language}})",
@@ -270,17 +313,15 @@
     "chatPromptTemplate": "Nutze für Logic Circuit Anfragen folgende SessionID: {{sessionId}}",
     "copyChatPrompt": "Chat-Prompt kopieren",
     "chatPromptCopied": "Chat-Prompt kopiert",
-    "accessKeyLabel": "Zugangsschlüssel (optional, lokal gespeichert):",
-    "accessKeyPlaceholder": "MCP_ACCESS_KEY (falls vom Server verlangt)",
     "accessKeyTokenPlaceholder": "<dein-access-key>",
-    "clearKeyButton": "Löschen",
     "connectButton": "Verbinden",
     "disconnectButton": "Trennen",
-    "showConfigButton": "IDE-Config anzeigen",
-    "hideConfigButton": "IDE-Config ausblenden",
-    "configLabel": "Statische `mcp_config.json` (ohne SessionID):",
-    "copyConfig": "Config kopieren",
-    "configCopied": "Config kopiert",
+    "openSettingsButton": "Einstellungen…",
+    "sidecarUrlRequiredHint": "Bitte zuerst eine Sidecar-URL in den Einstellungen (BYO SideCar) konfigurieren.",
+    "versionOutdatedNotice": "Sidecar-Version v{{serverVersion}} ist älter als die App (v{{clientVersion}}). Update empfohlen.",
+    "versionClientOutdatedNotice": "Sidecar-Version v{{serverVersion}} ist neuer als diese App (v{{clientVersion}}). Seite ggf. neu laden.",
+    "versionDownloadButton": "Sidecar herunterladen",
+    "blockedByCollabNotice": "MCP ist während der Kollaboration ausschließlich dem aktiven Session-Host vorbehalten. Verbinden und Tab-Aktivierung sind gesperrt.",
     "privacyNote": "Datenschutz: Keine Anmeldung, keine Cookies, keine Server-Persistenz – SessionIDs liegen nur flüchtig im RAM."
   },
   "palette": {
@@ -334,7 +375,14 @@
       "properties": "Eigenschaften...",
       "truthTable": "Wahrheitstabelle...",
       "usage": "Verwendungsnachweis...",
+      "addToLibrary": "Zur Bibliothek hinzufügen...",
+      "addToLibraryReadOnlyTooltip": "Bibliothek ist schreibgeschützt oder noch nicht verknüpft",
       "delete": "Löschen"
+    },
+    "tabs": {
+      "ariaLabel": "Seitenleisten-Ansicht",
+      "project": "Projekt",
+      "library": "Bibliothek"
     },
     "confirmDeleteTitle": "Schaltung löschen",
     "confirmDeleteMessage": "Möchten Sie die Schaltung „{{name}}“ wirklich aus dem Projekt löschen?",
@@ -358,6 +406,7 @@
       "titleSubCircuit": "{{label}} (Doppelklick zum Öffnen, Ziehen zum Platzieren)",
       "deleteCircuitTitle": "Schaltung „{{label}}“ löschen",
       "activeBadge": "Aktiv",
+      "presenceTooltip": "Gerade hier aktiv: {{names}}",
       "notationLabel": "Beschriftung",
       "notationAriaLabel": "Beschriftung für {{label}}",
       "buttonModeLabel": "Betriebsmodus",
@@ -412,6 +461,13 @@
   "dialog": {
     "options": {
       "title": "Einstellungen / Optionen",
+      "tabs": {
+        "tablistAriaLabel": "Einstellungsbereiche",
+        "general": "Allgemein",
+        "directories": "Verzeichnisse",
+        "collab": "Kollaboration",
+        "sidecar": "BYO SideCar"
+      },
       "languageLabel": "Sprache",
       "languageAuto": "Automatisch (Browser: {{language}})",
       "languageHint": "Änderungen werden sofort übernommen – ohne Neuladen und ohne Verlust des Schaltungszustands.",
@@ -441,7 +497,68 @@
       "errorLoadDirectories": "Gespeicherte Projektverzeichnisse konnten nicht geladen werden.",
       "errorFsUnsupported": "Die File System Access API wird in diesem Browser nicht unterstützt.",
       "errorAddDirectory": "Das Projektverzeichnis konnte nicht hinzugefügt werden.",
-      "errorPermissionNotGranted": "Berechtigung für „{{name}}“ wurde nicht erteilt."
+      "errorPermissionNotGranted": "Berechtigung für „{{name}}“ wurde nicht erteilt.",
+      "collabDisplayNameLabel": "Anzeigename (Kollaboration)",
+      "collabDisplayNamePlaceholder": "z. B. Alex",
+      "collabDisplayNameClearButton": "Löschen",
+      "collabDisplayNameHint": "Wird lokal im Browser gespeichert und beim Starten oder Beitreten einer Kollaborations-Session vorbefüllt (max. 64 Zeichen). In laufenden Sessions kann der Name im Teilnehmer-Panel geändert werden.",
+      "collabCursorIdleLabel": "Inaktive Mauszeiger ausblenden nach",
+      "collabCursorIdleHint": "Blendet regungslose Mauszeiger anderer Teilnehmer automatisch aus, damit Pins und Leitungen frei bleiben. Bei Bewegung erscheinen sie sofort wieder.",
+      "collabCursorIdleSeconds": "{{seconds}} Sekunden",
+      "collabCursorIdleNever": "Nie ausblenden",
+      "collabCursorVisibilityLabel": "Sichtbare Mauszeiger im Schaltplan",
+      "collabCursorVisibilityHint": "Filtert fremde Mauszeiger bei größeren Gruppen. Aktiv verfolgte Teilnehmer bleiben immer sichtbar.",
+      "collabCursorVisibilityModes": {
+        "all": "Alle Mauszeiger anzeigen",
+        "collaboratorsAndRaisedHand": "Hand gehoben + Kollaborateure",
+        "collaborators": "Nur Kollaborateure",
+        "raisedHand": "Nur Hand gehoben"
+      },
+      "collabColorsLabel": "Gespeicherte Teilnehmer-Farben",
+      "collabColorsHint": "Gilt ausschließlich lokal für dich; entfernte Namen erhalten beim nächsten Beitritt automatisch eine neue Farbe.",
+      "collabColorsClearAllButton": "Alle entfernen",
+      "collabColorsEmpty": "Noch keine gespeicherten Teilnehmerfarben vorhanden.",
+      "collabColorsInputAriaLabel": "Farbe für {{name}} wählen",
+      "collabColorsDeleteAriaLabel": "{{name}} aus der Farbliste entfernen",
+      "collabStunLabel": "WebRTC STUN-Server (Kollaboration)",
+      "collabResetStunButton": "Standard wiederherstellen",
+      "collabStunHint": "Optionale STUN-Server (eine stun:-/stuns:-URL pro Zeile oder kommagetrennt). Leer = Server-/Standard-STUN. TURN ist erst für eine spätere Ausbaustufe geplant.",
+      "collabTurnNotSupportedWarning": "TURN-/TURNS-Server werden in dieser Ausbaustufe (v1) noch nicht unterstützt und werden ignoriert.",
+      "collabStunInvalidError": "Ungültige STUN-URL(s): {{urls}}",
+      "collabAccessKeyLabel": "Host-Zugangsschlüssel (optional, nur lokal)",
+      "collabAccessKeyPlaceholder": "Optionales Server-Secret (COLLAB_ACCESS_KEY)",
+      "collabClearAccessKeyButton": "Löschen",
+      "collabAccessKeyHint": "Nur erforderlich, wenn der Signaling-Server für das Starten neuer Host-Sessions geschützt ist. Bleibt ausschließlich lokal im Browser.",
+      "sidecarUrlLabel": "Eigene Sidecar-Basis-URL (BYO SideCar)",
+      "sidecarUrlPlaceholder": "http://localhost:3001 oder https://sidecar.example.com",
+      "sidecarUrlLocalhostButton": "http://localhost:3001 übernehmen",
+      "sidecarUrlClearButton": "Zurücksetzen",
+      "sidecarUrlHint": "Optionales Ziel für MCP- und Collab-Signaling. Leer = aktueller Server-Host.",
+      "sidecarUrlRequiredHint": "Auf GitHub Pages erforderlich für MCP oder WebRTC-Collab. Solange das Feld leer ist, erfolgt kein Netzwerk-Traffic.",
+      "sidecarUrlLocalhostHint": "Lokaler Sidecar unter localhost erkannt (funktioniert auch von HTTPS-Seiten via Private Network Access).",
+      "mcpAccessKeyLabel": "MCP-Zugangsschlüssel (optional, nur lokal)",
+      "mcpAccessKeyPlaceholder": "Optionales Server-Secret (MCP_ACCESS_KEY)",
+      "mcpAccessKeyHint": "Nur erforderlich, wenn der Sidecar für /mcp und /ws-mcp durch MCP_ACCESS_KEY geschützt ist. Bleibt lokal im Browser.",
+      "sidecarTestButton": "Verbindung prüfen",
+      "sidecarTestingButton": "Prüfe Verbindung…",
+      "sidecarProbeReachable": "Sidecar erreichbar ({{url}})",
+      "sidecarProbeUnreachable": "Sidecar nicht erreichbar oder noch nicht konfiguriert.",
+      "sidecarProbeVersion": "Server-Version: {{version}}",
+      "sidecarProbeAuthMcp": "MCP-Auth: {{status}}",
+      "sidecarProbeAuthCollab": "Collab-Auth: {{status}}",
+      "sidecarProbeAuthYes": "erforderlich",
+      "sidecarProbeAuthNo": "offen",
+      "sidecarProbeAuthUnknown": "unbekannt",
+      "sidecarVersionCompatible": "Version kompatibel mit App v{{clientVersion}}.",
+      "sidecarVersionOutdated": "Sidecar veraltet (Server v{{serverVersion}}, App v{{clientVersion}}) – Update empfohlen.",
+      "sidecarVersionClientOutdated": "Sidecar neuer als diese App (Server v{{serverVersion}}, App v{{clientVersion}}).",
+      "sidecarVersionUnknown": "Server-Version nicht gemeldet.",
+      "showIdeConfigButton": "IDE-Config anzeigen",
+      "hideIdeConfigButton": "IDE-Config ausblenden",
+      "ideConfigLabel": "Streamable-HTTP mcp_config.json (ohne SessionID):",
+      "copyIdeConfigButton": "Config kopieren",
+      "ideConfigCopied": "Config kopiert",
+      "sidecarDownloadButton": "Sidecar-Paket herunterladen"
     },
     "project": {
       "title": "Projekt-Einstellungen",
@@ -584,11 +701,39 @@
       "cookiesBody": "Es werden weder Tracking- oder Analyse-Dienste noch Nutzerkonten oder Datenbanken verwendet.",
       "remoteMcpTitle": "Remote-MCP (Opt-in):",
       "remoteMcpBody": "Nur bei manueller Aktivierung wird eine Verbindung zum zustandslosen Relay aufgebaut. Flüchtige Session-IDs existieren ausschließlich im RAM und werden nach Sitzungsende gelöscht.",
+      "webrtcCollabTitle": "WebRTC-Kollaboration (P2P):",
+      "webrtcCollabBody": "Bei aktiver Kollaborations-Session werden zwischen den verbundenen Teilnehmern technisch IP-Adressen (ICE-Kandidaten) über STUN für direkte Peer-to-Peer-Verbindungen ausgetauscht. Der Signaling-Relay speichert weder Schaltungsprojekte noch Chat- oder Lobby-Daten und hält Einladungs-Tokens ausschließlich flüchtig im RAM.",
       "hostingTitle": "Hosting-Standort:",
       "hostingDefault": "Bereitstellung gemäß Server-Konfiguration des Betreibers.",
       "hostingStaticDefault": "Statische Bereitstellung (rein clientseitige Ausführung im Browser).",
       "rightsSection": "Ihre Rechte",
       "rightsBody": "Bei Verarbeitung personenbezogener Daten stehen Ihnen nach Art. 15 ff. DSGVO das Recht auf Auskunft, Berichtigung, Löschung sowie Beschwerde bei einer zuständigen Datenschutzaufsichtsbehörde zu."
+    },
+    "sidecarDownload": {
+      "title": "Sidecar herunterladen (BYO SideCar)",
+      "intro": "Eigenständiger, datenbankfreier Sidecar-Server für Streamable-HTTP-MCP (/mcp) und WebRTC-Kollaboration (/ws-collab) – z. B. für localhost neben GitHub Pages oder für eigenes Self-Hosting.",
+      "expectedVersionLabel": "Erwartete Sidecar-Version: {{version}}",
+      "requirementsBadge": "Node.js 22+ oder Docker · Standard-Port 3001",
+      "downloadButton": "Sidecar-Paket herunterladen ({{fileName}})",
+      "openByoButton": "BYO-SideCar-Einstellungen öffnen...",
+      "nodeSectionTitle": "Schnellstart mit Node.js 22+ (ohne npm install)",
+      "dockerSectionTitle": "Schnellstart mit Docker / Docker Compose",
+      "configSectionTitle": "Konfiguration & Sicherheit",
+      "hintKeys": "Zugangsschutz: MCP_ACCESS_KEY (Bearer-Auth auf /mcp & /ws-mcp) und COLLAB_ACCESS_KEY (Host-Sessions auf /ws-collab) in der .env-Datei setzen.",
+      "hintOrigins": "Browser-CORS / WebSocket-Whitelist: MCP_ALLOWED_ORIGINS und COLLAB_ALLOWED_ORIGINS auf die genutzte Web-URL setzen (z. B. https://afe-gmdg.github.io für GitHub Pages).",
+      "hintProxy": "Lokal unter http://localhost:3001 funktioniert der Sidecar direkt aus dem Browser (Private Network Access). Für öffentliche Domains empfiehlt sich ein HTTPS-Reverse-Proxy (siehe deploy/Caddyfile.example)."
+    },
+    "resyncWarning": {
+      "title": "Schaltung mit Host abgleichen (Resync)",
+      "reasonLabel": "Auslöser: {{reason}}",
+      "reasonManual": "Manueller Resync angefordert",
+      "reasonReconnected": "Wiederverbindung nach Verbindungsunterbrechung",
+      "reasonRevisionGap": "Fehlende Revisionsschritte erkannt",
+      "reasonConflict": "Konflikt mit autoritativem Host-Stand",
+      "message": "Beim Abgleich wird der aktuelle autoritative Schaltungsstand des Hosts übernommen. Unbestätigte lokale Änderungen gehen dabei unwiderruflich verloren.",
+      "unconfirmedChanges_one": "Achtung: {{count}} unbestätigte lokale Änderung wird dabei verworfen.",
+      "unconfirmedChanges_other": "Achtung: {{count}} unbestätigte lokale Änderungen werden dabei verworfen.",
+      "confirmButton": "Änderungen verwerfen & abgleichen"
     },
     "simulationError": {
       "closeAriaLabel": "Fehlermeldung schließen",
@@ -637,6 +782,9 @@
       "titleGraphicsArray": "Eigenschaften: Grafisches Display",
       "titleNewCircuit": "Neue Schaltung anlegen",
       "titleCircuit": "Eigenschaften: Schaltung „{{name}}“",
+      "titleLibraryAdd": "Zur Bibliothek hinzufügen: „{{name}}“",
+      "titleLibraryEdit": "Bibliothekseintrag bearbeiten: „{{name}}“",
+      "saveLibraryAddButton": "In Bibliothek speichern",
       "ledColorLabel": "Leuchtfarbe",
       "soundNotationLabel": "Beschriftung / Notation",
       "soundNotationPlaceholder": "z. B. PIEP, CH1 (optional)",
@@ -705,7 +853,7 @@
       "pinNameFallback": "Pin",
       "jamNotationLabel": "Beschriftung am Chip (Jam-Notation)",
       "jamNotationPlaceholder": "z. B. CLK, D, Q, EN (optional)",
-      "jamNotationHint": "Kurzbezeichnung am Sub-Circuit-Symbol (bis zu 2 Zeichen links/rechts, 4 Zeichen oben/unten; Fallback: Pin-Name).",
+      "jamNotationHint": "Kurzbezeichnung am Sub-Circuit-Symbol (bis zu 2 Zeichen links/rechts, 4 Zeichen oben/unten; leer lassen für keine Beschriftung).",
       "pinTypeLabel": "Pin-Richtung",
       "pinTypeInput": "Eingang (Input)",
       "pinTypeOutput": "Ausgang (Output)",
@@ -760,7 +908,7 @@
       "circuitNameLabel": "Schaltungs-Name",
       "circuitNamePlaceholder": "z. B. Hauptschaltung, ALU",
       "circuitNotationLabel": "Beschriftung / Notation auf Symbol",
-      "circuitNotationPlaceholder": "z. B. ALU, FA",
+      "circuitNotationPlaceholder": "z. B. ALU, FA (leer = keine Beschriftung)",
       "circuitCategoryLabel": "Kategorie in der Bauteil-Palette",
       "circuitCategoryPlaceholder": "z. B. Arithmetik, Speicher, Hilfsbausteine",
       "circuitShapeLabel": "Symbolform (Subschaltungs-Darstellung)",
@@ -1059,7 +1207,11 @@
       "statusPaused": "Pausiert",
       "statusStopped": "Gestoppt",
       "oscillationWarning": "⚠️ Schaltung oszilliert",
-      "jumpToErrorButton": "Springe zu Fehler"
+      "jumpToErrorButton": "Springe zu Fehler",
+      "snapshotModeBadge": "Lokaler Snapshot (RAM bleibt lokal)",
+      "snapshotPendingUpdates_one": "1 Team-Änderung wartet auf Nachzug",
+      "snapshotPendingUpdates_other": "{{count}} Team-Änderungen warten auf Nachzug",
+      "snapshotResyncPending": "Team-Abgleich beim Beenden ausstehend"
     }
   },
   "wire": {
@@ -1092,7 +1244,8 @@
     "allProjects": "Logic Circuit Projekte (.lcweb, .CircuitProject)",
     "nativeProject": "Logic Circuit Web Projekt (.lcweb)",
     "desktopProject": "LogicCircuit Desktop Projekt (.CircuitProject)",
-    "desktopSaveProject": "LogicCircuit Desktop Projekt (.CircuitProject)"
+    "desktopSaveProject": "LogicCircuit Desktop Projekt (.CircuitProject)",
+    "circuitLibrary": "Logic Circuit Web Bibliothek (.lclib)"
   },
   "errors": {
     "circuitManagement": {
@@ -1248,5 +1401,344 @@
       "graphicsArray": "Grafikdisplay",
       "textNote": "Textnotiz"
     }
+  },
+  "builtInLibrary": {
+    "categories": {
+      "arithmetic": "Arithmetik",
+      "multiplexers": "Multiplexer",
+      "decoders": "Dekoder",
+      "memory": "Flipflops & Register"
+    },
+    "circuits": {
+      "halfAdder": {
+        "name": "Halbaddierer",
+        "note": "Addiert zwei 1-Bit-Eingänge (A, B) zu Summe (S) und Übertrag (C)."
+      },
+      "fullAdder": {
+        "name": "Volladdierer",
+        "note": "Addiert zwei 1-Bit-Eingänge (A, B) plus Eingangsübertrag (Cin) zu Summe (S) und Übertrag (Cout)."
+      },
+      "mux2to1": {
+        "name": "2:1-Multiplexer",
+        "note": "Wählt abhängig von S zwischen D0 (S=0) und D1 (S=1)."
+      },
+      "mux4to1": {
+        "name": "4:1-Multiplexer",
+        "note": "Wählt abhängig von S1, S0 einen der vier Dateneingänge D0 bis D3."
+      },
+      "decoder2to4": {
+        "name": "2:4-Dekoder",
+        "note": "Aktiviert bei EN=1 genau einen der vier Ausgänge Y0 bis Y3 entsprechend (A1, A0)."
+      },
+      "srLatch": {
+        "name": "SR-Latch",
+        "note": "Basis-Speicherelement mit aktiv-hohem Setzen (S) und Rücksetzen (R)."
+      },
+      "dFlipFlop": {
+        "name": "D-Flipflop",
+        "note": "Positiv flankengesteuertes D-Flipflop: übernimmt D bei steigender Taktflanke (CLK)."
+      },
+      "jkFlipFlop": {
+        "name": "JK-Flipflop",
+        "note": "Positiv flankengesteuertes JK-Flipflop (Halten, Setzen, Rücksetzen, Toggeln)."
+      },
+      "register4Bit": {
+        "name": "4-Bit-Register",
+        "note": "Speichert 4-Bit-Werte bei steigender Taktflanke (CLK), sofern LOAD=1 aktiv ist."
+      }
+    }
+  },
+  "library": {
+    "searchPlaceholder": "Bibliothek durchsuchen...",
+    "searchAriaLabel": "Bibliotheksschaltungen filtern",
+    "noSearchResults": "Keine passenden Bibliotheksschaltungen gefunden.",
+    "addedFeedback": "„{{name}}“ wurde zur Bibliothek hinzugefügt.",
+    "toolbar": {
+      "openFile": "Öffnen",
+      "openFileTitle": "Bestehende .lclib-Bibliotheksdatei öffnen und verknüpfen",
+      "createFile": "Neu",
+      "createFileTitle": "Neue .lclib-Bibliotheksdatei anlegen und verknüpfen",
+      "import": "Import...",
+      "importTitle": "Schaltungen aus .lclib, .lcweb oder .CircuitProject in die Bibliothek importieren",
+      "export": "Export",
+      "exportTitle": "Aktuelle Bibliothek als .lclib herunterladen",
+      "unlink": "Trennen",
+      "unlinkTitle": "Verknüpfung zur lokalen Bibliotheksdatei aufheben"
+    },
+    "status": {
+      "synced": "Verknüpft: {{fileName}}",
+      "readOnly": "Nur Lesen",
+      "uninitializedTitle": "Noch keine persönliche Bibliothek verknüpft",
+      "uninitializedHint": "Öffnen Sie eine bestehende .lclib-Datei oder legen Sie eine neue Bibliotheksdatei an. Integrierte Standard-ICs stehen darunter direkt bereit.",
+      "loadExistingButton": "Bibliothek laden (.lclib)",
+      "createNewButton": "Neue Bibliothek anlegen"
+    },
+    "resync": {
+      "needsPermissionTitle": "Schreibzugriff pausiert ({{fileName}})",
+      "needsPermissionMessage": "Nach dem Neuladen arbeitet die Bibliothek schreibgeschützt aus dem Cache. Erteilen Sie erneut Dateizugriff für den Abgleich (Datei gewinnt).",
+      "handleInvalidMessage": "Die verknüpfte Bibliotheksdatei ({{fileName}}) ist aktuell nicht erreichbar (Cache aktiv, Nur Lesen).",
+      "unsupportedMessage": "Dieser Browser unterstützt keine direkten Dateihandles. Die geladene Bibliothek ({{fileName}}) ist schreibgeschützt.",
+      "button": "Erneut autorisieren",
+      "relinkButton": "Datei neu verknüpfen",
+      "dismissAriaLabel": "Hinweis ausblenden"
+    },
+    "sections": {
+      "userLibrary": "Eigene Bibliothek",
+      "builtInCatalog": "Standard-ICs (Nur Lesen)",
+      "uncategorized": "Allgemein",
+      "emptyUserLibrary": "Diese Bibliothek enthält noch keine eigenen Schaltungen. Rechtsklick auf eine Projekt-Subschaltung → „Zur Bibliothek hinzufügen...“."
+    },
+    "item": {
+      "readOnlyBadge": "IC",
+      "pinSummary": "{{inputs}}E / {{outputs}}A",
+      "placeTooltip": "{{name}} – Auf den Schaltplan ziehen oder doppelklicken (Kopie einfügen)",
+      "context": {
+        "insertCopy": "Kopie in Schaltplan einfügen",
+        "editInMode": "In Bibliotheksmodus öffnen",
+        "editMetadata": "Metadaten bearbeiten...",
+        "duplicateToLibrary": "In eigene Bibliothek kopieren",
+        "exportNative": "Als .lcweb-Projekt exportieren...",
+        "exportXml": "Für Desktop exportieren (.CircuitProject)...",
+        "delete": "Aus Bibliothek löschen",
+        "readOnlyEditDisabled": "Standard-ICs sind schreibgeschützt (zuerst in eigene Bibliothek kopieren)",
+        "needWritableForCopy": "Zuerst eine persönliche .lclib-Bibliothek öffnen oder anlegen"
+      }
+    },
+    "deleteConfirm": {
+      "title": "Bibliothekseintrag löschen",
+      "message": "Möchten Sie „{{name}}“ wirklich aus der Bibliothek löschen?",
+      "referencedTitle": "Schaltung wird noch referenziert",
+      "referencedMessage": "„{{name}}“ wird von folgenden Bibliotheksschaltungen verwendet: {{dependents}}. Sollen „{{name}}“ und die abhängigen Schaltungen gemeinsam gelöscht werden?",
+      "confirmDelete": "Löschen",
+      "confirmCascadeDelete": "Alle ({{count}}) mit löschen"
+    },
+    "importDialog": {
+      "title": "Schaltungen importieren ({{fileName}})",
+      "description": "Wählen Sie die zu übernehmenden Schaltungen aus. Verwendete Subschaltungen werden automatisch mit importiert.",
+      "rootBadge": "Hauptschaltung",
+      "depsCount_one": "+ {{count}} Subschaltung",
+      "depsCount_other": "+ {{count}} Subschaltungen",
+      "selectAll": "Alle auswählen",
+      "confirmButton": "Ausgewählte übernehmen"
+    },
+    "errors": {
+      "readOnly": "Die Bibliothek ist aktuell schreibgeschützt oder nicht verknüpft.",
+      "loadFailed": "Die Bibliotheksdatei konnte nicht geladen werden.",
+      "createFailed": "Die neue Bibliotheksdatei konnte nicht angelegt werden.",
+      "saveFailed": "Die Änderungen konnten nicht in die Bibliotheksdatei gespeichert werden.",
+      "resyncFailed": "Die erneute Dateifreigabe wurde nicht erteilt.",
+      "circuitNotFound": "Die ausgewählte Bibliotheksschaltung wurde nicht gefunden.",
+      "unsupportedImportFile": "Bitte eine gültige .lclib-, .lcweb-, .CircuitProject- oder .xml-Datei wählen.",
+      "noCircuitsFound": "In dieser Datei wurden keine importierbaren Schaltungen gefunden."
+    }
+  },
+  "collabDiagnostics": {
+    "connectingTitle": "WebRTC-Verbindung wird aufgebaut",
+    "connectingBody": "ICE-Kandidaten werden über STUN ermittelt und peer-to-peer ausgehandelt.",
+    "degradedTitle": "Verbindung instabil (Grace Period aktiv)",
+    "degradedBody": "Die direkte P2P-Verbindung wurde unterbrochen. Automatische Wiederherstellung innerhalb von {{seconds}} s läuft.",
+    "reconnectingTitle": "P2P-Wiederverbindung läuft",
+    "reconnectingBody": "Verbindung wird innerhalb der Grace Period ({{seconds}} s) wiederhergestellt.",
+    "migratingHostTitle": "Host-Wechsel läuft",
+    "migratingHostBody": "Verbindungen werden automatisch auf den neuen Session-Host umgeschaltet.",
+    "disconnectedTitle": "Kollaborations-Verbindung getrennt",
+    "disconnectedBody": "Die P2P-Session wurde beendet oder getrennt. Ein manueller Abgleich kann bei bestehender Verbindung erneut angefordert werden.",
+    "stunUnreachableTitle": "STUN-Server nicht erreichbar oder UDP blockiert",
+    "stunUnreachableBody": "Es konnten keine öffentlichen ICE-Kandidaten ermittelt werden. Prüfen Sie Ihre Firewall- bzw. STUN-Einstellungen.",
+    "symmetricNatTitle": "Direkte P2P-Verbindung fehlgeschlagen (NAT / Firewall)",
+    "symmetricNatBody": "Trotz STUN-Auflösung kam keine direkte Verbindung zustande (z. B. durch Symmetric NAT oder blockiertes UDP).",
+    "hostMigrationFailedTitle": "Verbindung zum neuen Host fehlgeschlagen",
+    "hostMigrationFailedBody": "Nach dem Host-Wechsel konnte per STUN keine direkte P2P-Verbindung zum neuen Host aufgebaut werden.",
+    "signalingUnavailableTitle": "Signaling-Server nicht erreichbar",
+    "signalingUnavailableBody": "Der WebSocket-Signaling-Endpunkt reagiert aktuell nicht; erneuter Verbindungsaufbau läuft.",
+    "turnPlannedHint": "Hinweis: In dieser ersten Ausbaustufe wird ausschließlich direktes STUN unterstützt; ein TURN-Relay für restriktive Netze ist für eine spätere Erweiterung geplant.",
+    "manualResyncButton": "Manueller Resync"
+  },
+  "collabSync": {
+    "hostLoadingProjectTitle": "Host lädt neue Schaltung",
+    "hostLoadingProjectBody": "Der Host wählt gerade eine neue Schaltung aus. Änderungen sind vorübergehend gesperrt und werden derzeit nicht übernommen.",
+    "hostHandoverQuiesceTitle": "Host-Wechsel läuft",
+    "hostHandoverQuiesceBody": "Die Host-Verantwortung wird gerade übertragen. Änderungen sind kurzzeitig pausiert.",
+    "guestReadOnlyBadgeTitle": "Gastmodus (Nur Lesen)",
+    "guestReadOnlyBadgeBody": "Geteilte Projektschaltungen sind schreibgeschützt. Deine eigene lokale Bibliothek kannst du weiterhin bearbeiten.",
+    "guestReadOnlyTooltip": "Im Gastmodus ist die geteilte Schaltung schreibgeschützt.",
+    "hostOnlyProjectActionTooltip": "In einer laufenden Kollaborations-Session kann nur der Host das Projekt ersetzen.",
+    "lockedByTooltip": "Wird gerade von {{name}} bearbeitet",
+    "dialogLockedBanner": "Gesperrt: Dieses Element wird gerade von {{name}} bearbeitet. Ansicht im Nur-Lesen-Modus.",
+    "dialogGuestReadOnlyBanner": "Nur Lesen (Gast): Änderungen an der geteilten Projektschaltung sind deaktiviert.",
+    "softLockBlockedTitle": "Element vorübergehend gesperrt",
+    "softLockBlockedBody": "Dieses Element wird gerade von {{name}} bearbeitet und kann nicht verändert werden.",
+    "syncRejectionTitle": "Änderung vom Host zurückgerollt",
+    "syncRejectionFallback": "Die lokale Änderung kollidierte mit dem Host-Zustand und wurde zurückgesetzt.",
+    "undoConflictTitle": "Undo / Redo nicht anwendbar",
+    "undoConflictSpatialCollision": "Rückgängig blockiert: Zielposition wird bereits von einem anderen Baustein belegt. Bitte Konflikt auflösen und erneut versuchen.",
+    "undoConflictEntityLocked": "Rückgängig blockiert: Mindestens ein betroffenes Element wird gerade von {{name}} bearbeitet.",
+    "undoConflictEntityModified": "Rückgängig blockiert: Betroffene Elemente wurden inzwischen von einem anderen Teilnehmer verändert.",
+    "undoConflictWireTopology": "Rückgängig blockiert: Verbindungsleitungen wurden inzwischen durch andere Änderungen umverdrahtet.",
+    "undoConflictEntityMissing": "Rückgängig blockiert: Die zugehörige Schaltung oder ein betroffenes Element existiert nicht mehr.",
+    "undoConflictGeneric": "Der gewählte Schritt konnte im aktuellen gemeinsamen Zustand nicht angewendet werden.",
+    "snapshotSimActiveTitle": "Lokale Snapshot-Simulation",
+    "snapshotSimActiveBody": "Du simulierst lokal auf einem eingefrorenen Stand. RAM-Änderungen bleiben lokal und werden nicht ins Team-Projekt zurückgeschrieben.",
+    "snapshotSimUpdatesTitle_one": "1 neue Team-Änderung im Hintergrund gepuffert",
+    "snapshotSimUpdatesTitle_other": "{{count}} neue Team-Änderungen im Hintergrund gepuffert",
+    "snapshotSimUpdatesBody": "Beim Beenden der lokalen Simulation werden alle gepufferten Änderungen automatisch übernommen.",
+    "snapshotSimProjectSwitchTitle": "Host hat das Projekt gewechselt",
+    "snapshotSimProjectSwitchBody": "Das neue Projekt ist im Hintergrund bereit und wird beim Beenden deiner lokalen Simulation automatisch geladen.",
+    "snapshotSimResyncPendingTitle": "Nachsynchronisation nach Verbindungsunterbrechung ausstehend",
+    "snapshotSimResyncPendingBody": "Beim Beenden der lokalen Simulation werden fehlende Team-Änderungen automatisch vom Host nachgezogen.",
+    "snapshotSimStopAndApplyButton": "Simulation beenden & übernehmen"
+  },
+  "collabStartDialog": {
+    "title": "Kollaborations-Session starten",
+    "description": "Teile dein aktuelles Projekt über direkte WebRTC-P2P-Verbindungen und erzeuge rollengebundene 5-Minuten-Einladungslinks ohne Lobby oder Chat.",
+    "displayNameLabel": "Dein Anzeigename (Pflichtfeld)",
+    "displayNamePlaceholder": "z. B. Alex",
+    "displayNameRequiredError": "Bitte einen Anzeigenamen angeben (1–64 Zeichen).",
+    "privacyTitle": "WebRTC- & DSGVO-Datenschutzhinweis",
+    "privacyBody": "Für direkte P2P-Verbindungen werden technische IP-Adressen / ICE-Kandidaten zwischen verbundenen Teilnehmern ausgetauscht. Signaling-Tokens verbleiben flüchtig im RAM ohne Cookies oder Konten.",
+    "openPrivacyButton": "Datenschutz-Details (GDPR)...",
+    "sidecarRequiredTitle": "Sidecar-Konfiguration erforderlich",
+    "sidecarRequiredBody": "Dieses statische Deployment besitzt keinen integrierten Signaling-Server (SIDECAR_CUSTOM_ONLY). Bitte konfiguriere zuerst eine Sidecar-URL unter Hilfe → BYO SideCar...",
+    "accessKeyRequiredTitle": "Host-Zugangsschlüssel erforderlich",
+    "accessKeyRequiredBody": "Der Signaling-Server erfordert einen COLLAB_ACCESS_KEY zum Starten neuer Host-Sessions. Hinterlege ihn lokal unter Hilfe → BYO SideCar...",
+    "openByoSidecarButton": "BYO SideCar-Einstellungen öffnen...",
+    "rateLimitedError": "Zu viele Anfragen an den Signaling-Server. Bitte {{seconds}} s warten und erneut versuchen.",
+    "rateLimitedErrorGeneric": "Zu viele Anfragen an den Signaling-Server. Bitte kurz warten und erneut versuchen.",
+    "serviceUnavailableError": "Der Signaling-Server hat derzeit keine freie Session-Kapazität (503). Bitte in Kürze erneut versuchen.",
+    "cancelButton": "Abbrechen",
+    "startButton": "Session starten",
+    "startingButton": "Starte…"
+  },
+  "collabPanel": {
+    "title": "Teilnehmer",
+    "expandAriaLabel": "Teilnehmer-Panel ausklappen",
+    "collapseAriaLabel": "Teilnehmer-Panel einklappen",
+    "participantCount_one": "{{count}} Teilnehmer",
+    "participantCount_other": "{{count}} Teilnehmer",
+    "raisedHands_one": "{{count}} Hand gehoben",
+    "raisedHands_other": "{{count}} Hände gehoben",
+    "raiseHandButton": "Hand heben",
+    "lowerHandButton": "Hand senken",
+    "handRaisedBadge": "Hand gehoben",
+    "selfBadge": "Du",
+    "nameLockedBadge": "Gesperrt",
+    "nameLockedHint": "Dein Anzeigename wurde vom Host gesperrt und kann nicht eigenmächtig geändert werden.",
+    "selfNameLabel": "Anzeigename",
+    "selfNameSaveButton": "Übernehmen",
+    "roles": {
+      "host": "Host",
+      "collaborator": "Kollaborateur",
+      "guest": "Gast"
+    },
+    "connectionStates": {
+      "connecting": "Verbindet",
+      "connected": "Verbunden",
+      "degraded": "Instabil",
+      "reconnecting": "Reconnecting",
+      "failed": "Fehlgeschlagen",
+      "disconnected": "Getrennt"
+    },
+    "invitesTitle": "Einladungslinks (5 Min. gültig)",
+    "createGuestInviteButton": "Einladen als Gast",
+    "createCollaboratorInviteButton": "Einladen als Kollaborateur",
+    "localhostWarning": "Hinweis: Die aktive Sidecar-URL zeigt auf localhost (Loopback). Externe Teilnehmer können diese Adresse nicht erreichen.",
+    "copyInviteButton": "Link kopieren",
+    "copiedInviteButton": "Kopiert!",
+    "regenerateInviteButton": "Neu erzeugen",
+    "revokeInviteButton": "Widerrufen",
+    "inviteExpiresIn": "Gültig: {{remaining}}",
+    "endSessionButton": "Session beenden",
+    "leaveSessionButton": "Session verlassen",
+    "presence": {
+      "changeColorTooltip": "Lokale Farbe für {{name}} anpassen",
+      "colorPickerTitle": "Farbauswahl für {{name}}",
+      "customColorLabel": "Eigene Farbe",
+      "inLibrary": "Bibliothek (lokal)",
+      "unknownCircuit": "Unbekannter Schaltplan",
+      "jumpButton": "Springen",
+      "jumpTooltip": "Zu {{name}} springen",
+      "followButton": "Folgen",
+      "followingButton": "Folgt",
+      "followingBanner": "Du folgst {{name}}",
+      "stopFollowingButton": "Folgen beenden",
+      "cursorVisibilityLabel": "Cursor-Filter",
+      "disabledWhileSimulatingTooltip": "Während einer laufenden lokalen Simulation nicht verfügbar"
+    },
+    "moderation": {
+      "makeCollaborator": "Zu Kollaborateur",
+      "makeGuest": "Zu Gast",
+      "editName": "Name",
+      "nameInputLabel": "Anzeigename für {{name}}",
+      "lockNameLabel": "Namenssperre (Bad-Word-Schutz)",
+      "saveName": "Speichern",
+      "cancelEdit": "Abbrechen",
+      "lowerHand": "Hand senken",
+      "transferHost": "Host übertragen",
+      "kick": "Entfernen"
+    }
+  },
+  "collabJoinDialog": {
+    "title": "Kollaborations-Session beitreten",
+    "description": "Tritt direkt ohne Lobby oder Chat über einen 5-Minuten-Einladungslink einer laufenden Session bei.",
+    "detectedInviteNotice": "Gültiger Einladungslink erkannt. Prüfe deinen Anzeigenamen und die Datenschutzhinweise vor dem Beitritt.",
+    "inviteLinkLabel": "Einladungslink oder Token",
+    "inviteLinkPlaceholder": "https://…/#collabInvite=… oder Token einfügen",
+    "inviteLinkRequiredError": "Bitte einen Einladungslink oder ein gültiges Einladungs-Token eingeben.",
+    "inviteLinkInvalidError": "Der eingegebene Einladungslink bzw. das Token ist ungültig.",
+    "displayNameLabel": "Dein Anzeigename (Pflichtfeld)",
+    "displayNamePlaceholder": "z. B. Alex",
+    "displayNameRequiredError": "Bitte einen Anzeigenamen angeben (1–64 Zeichen).",
+    "privacyTitle": "WebRTC- & DSGVO-Datenschutzhinweis",
+    "privacyBody": "Für direkte P2P-Verbindungen werden technische IP-Adressen / ICE-Kandidaten zwischen verbundenen Teilnehmern ausgetauscht. Das Signaling arbeitet flüchtig im RAM ohne Cookies oder Konten.",
+    "openPrivacyButton": "Datenschutz-Details (GDPR)...",
+    "remoteSidecarTitle": "Entfernter Custom-Sidecar im Einladungslink",
+    "remoteSidecarBody": "Dieser Einladungslink verweist auf den externen Signaling-Server „{{host}}“.",
+    "remoteSidecarEphemeralNote": "Hinweis: Dieser Server wird ausschließlich flüchtig für diese eine Session genutzt und überschreibt niemals deine lokal gespeicherte BYO-SideCar-Konfiguration.",
+    "remoteSidecarConfirmLabel": "Ich bestätige die Verbindung zum entfernten Sidecar „{{host}}“ ausschließlich für diese Session.",
+    "remoteSidecarConfirmRequiredError": "Bitte bestätige vor dem Beitritt die Verwendung des entfernten Custom-Sidecar-Servers.",
+    "unsavedTitle": "Ungespeicherte lokale Änderungen vorhanden",
+    "unsavedBody": "Dein aktuell geöffnetes lokales Projekt enthält ungespeicherte Änderungen. Möchtest du diese vor dem Beitritt speichern?",
+    "saveAndJoinButton": "Speichern & beitreten",
+    "joinWithoutSavingButton": "Ohne Speichern beitreten",
+    "savingButton": "Speichere…",
+    "joinButton": "Session beitreten",
+    "joiningButton": "Trete bei…",
+    "cancelButton": "Abbrechen",
+    "errorInviteExpired": "Dieser Einladungslink ist abgelaufen (maximal 5 Minuten gültig). Bitte einen neuen Link beim Host anfordern.",
+    "errorInviteRevoked": "Dieser Einladungslink wurde vom Host vorzeitig widerrufen.",
+    "errorInviteInvalid": "Dieser Einladungslink ist ungültig oder unbekannt.",
+    "errorSessionNotFound": "Die zugehörige Kollaborations-Session existiert nicht mehr oder wurde bereits beendet.",
+    "errorPeerLimitReached": "Die maximale Teilnehmerzahl dieser Session wurde bereits erreicht.",
+    "errorRateLimited": "Zu viele Anfragen an den Signaling-Server. Bitte {{seconds}} s warten und erneut versuchen.",
+    "errorRateLimitedGeneric": "Zu viele Anfragen an den Signaling-Server. Bitte kurz warten und erneut versuchen.",
+    "errorServiceUnavailable": "Der Signaling-Server hat derzeit keine Kapazität frei (503). Bitte in Kürze erneut versuchen.",
+    "errorSidecarRequired": "Für den Beitritt ist eine gültige Sidecar-Konfiguration oder ein Sidecar-Link erforderlich (Hilfe → BYO SideCar...).",
+    "errorNetwork": "Verbindung zum Signaling-Server fehlgeschlagen. Bitte Serveradresse und Netzwerk prüfen.",
+    "errorTimeout": "Zeitüberschreitung beim Aufbau der Signaling-Verbindung. Bitte erneut versuchen."
+  },
+  "collabTransferHostDialog": {
+    "title": "Host-Rolle übertragen?",
+    "targetSummary": "Möchtest du die volle Host-Verantwortung an {{name}} (aktuelle Rolle: {{role}}) übertragen?",
+    "guestWarningTitle": "Übergabe an einen Gast",
+    "guestWarningBody": "{{name}} besitzt aktuell nur die Rolle „Gast“. Mit der Übernahme erhält dieser Teilnehmer sofort sämtliche Host-Rechte.",
+    "consequencesTitle": "Auswirkungen dieser Übertragung:",
+    "consequencesDemote": "Du gibst die Host-Rechte ab und wirst automatisch in die Rolle „Kollaborateur“ herabgestuft.",
+    "consequencesMcp": "Die MCP-Schnittstelle steht ab sofort ausschließlich dem neuen Host zur Verfügung; eine eigene Remote-MCP-Verbindung wird getrennt.",
+    "consequencesPreserve": "Bestehende Rollen, Anzeigenamen, Namenssperren und gehobene Hände aller Teilnehmer bleiben erhalten.",
+    "cancelButton": "Abbrechen",
+    "confirmButton": "Ja, Host übertragen"
+  },
+  "collabSessionEndedDialog": {
+    "kickedTitle": "Aus der Kollaborations-Session entfernt",
+    "kickedBody": "Der Host hat deine Teilnahme an dieser Kollaborations-Session beendet.",
+    "hostClosedTitle": "Kollaborations-Session beendet",
+    "hostClosedBody": "Der Host hat die Kollaborations-Session regulär beendet.",
+    "hostDisconnectedTitle": "Verbindung zum Host dauerhaft unterbrochen",
+    "hostDisconnectedBody": "Die Verbindung zum Session-Host konnte innerhalb der Grace Period nicht wiederhergestellt werden.",
+    "genericTitle": "Kollaborations-Session getrennt",
+    "genericBody": "Die aktive Kollaborations-Session wurde beendet.",
+    "localCopyTitle": "Unabhängiger lokaler Weiterbetrieb",
+    "localCopyBody": "Dein aktuell angezeigter Projektstand bleibt als eigenständige lokale Kopie erhalten und kann frei weiterbearbeitet und gespeichert werden (ohne automatisches Backporting).",
+    "okButton": "Verstanden"
   }
 }

@@ -1,5 +1,19 @@
 const COLLAPSED_CATEGORIES_STORAGE_KEY = "logicCircuit.palette.collapsedCategories";
 
+// Sprachunabhängige i18n-Schlüssel der festen System-Kategorien in der Bauteil-Palette
+export const SYSTEM_PALETTE_CATEGORY_KEYS = {
+  projectCircuits: "palette.categories.projectCircuits",
+  io: "palette.categories.io",
+  displays: "palette.categories.displays",
+  gates: "palette.categories.gates",
+  decoration: "palette.categories.decoration",
+} as const;
+
+// Erzeugt einen eigenen Namespace-Key für benutzerdefinierte Schaltungs-Kategorien
+export function getCustomPaletteCategoryKey(categoryName: string): string {
+  return `custom:${categoryName}`;
+}
+
 export type CollapsedCategoriesMap = Record<string, boolean>;
 
 // Lädt den eingeklappten Status aller Paletten-Kategorien aus localStorage

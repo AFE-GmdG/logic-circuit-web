@@ -8,11 +8,15 @@ import { isMcpDisabledByEnv } from "../../hooks/useMcpBridge";
 
 import type PrivacyConfig from "../../types/privacyConfig";
 
+import { isCollabDisabledByEnv } from "../../utils/collabIceConfig";
 import {
   fetchRuntimePrivacyConfig,
   getBuildPrivacyConfig,
   mergePrivacyConfig,
 } from "../../utils/privacyConfig";
+import { isCustomSidecarRequired } from "../../utils/sidecarStorage";
+
+export const OPEN_PRIVACY_DIALOG_EVENT = "logic-circuit:open-privacy-dialog";
 
 export type PrivacyDialogProps = React.ComponentPropsWithoutRef<"div"> & {
   isOpen: boolean;
@@ -29,6 +33,8 @@ const PrivacyDialog = styled(({
 }: PrivacyDialogProps) => {
   const { t } = useTranslation();
   const mcpDisabled = isMcpDisabledByEnv();
+  const collabDisabled = isCollabDisabledByEnv();
+  const isStaticCustomOnly = isCustomSidecarRequired();
   const baseConfig = React.useMemo(
     () => mergePrivacyConfig(getBuildPrivacyConfig(), initialConfig),
     [initialConfig],
@@ -155,9 +161,15 @@ const PrivacyDialog = styled(({
                   {t("dialog.privacy.remoteMcpBody")}
                 </li>
               )}
+              {!collabDisabled && (
+                <li data-testid="privacy-webrtc-section">
+                  <strong>{t("dialog.privacy.webrtcCollabTitle")}</strong>{" "}
+                  {t("dialog.privacy.webrtcCollabBody")}
+                </li>
+              )}
               <li>
                 <strong>{t("dialog.privacy.hostingTitle")}</strong>{" "}
-                {config.hostingLocation || t(mcpDisabled ? "dialog.privacy.hostingStaticDefault" : "dialog.privacy.hostingDefault")}
+                {config.hostingLocation || t(mcpDisabled || isStaticCustomOnly ? "dialog.privacy.hostingStaticDefault" : "dialog.privacy.hostingDefault")}
               </li>
             </ul>
           </section>

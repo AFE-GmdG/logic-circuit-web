@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { shouldRegisterLocalMcpChannel } from "../../src/hooks/useMcpBridge.ts";
+
 import type McpBridgeRequest from "../../src/types/mcp/mcpBridgeRequest.ts";
 
-import { MCP_EVENT_ACK, MCP_EVENT_REQUEST } from "../../src/mcp/mcpEvents.ts";
+import { MCP_EVENT_ACK, MCP_EVENT_BYE, MCP_EVENT_HELLO, MCP_EVENT_REQUEST } from "../../src/mcp/mcpEvents.ts";
 
-import McpBridge, { NoBrowserSessionError } from "../mcpBridge.ts";
+import McpBridge, { NoBrowserSessionError, type McpBridgeClient, type McpWebSocketChannel } from "../mcpBridge.ts";
 
 type SentMessage = {
   event: string;
@@ -119,5 +121,42 @@ describe("McpBridge", () => {
     bridge.registerClient(client);
     bridge.registerClient(client);
     expect(bridge.clientCount).toBe(1);
+  });
+
+  it("fällt nach MCP_EVENT_BYE eines Nicht-Host-Tabs auf den Host-Tab zurück und unterstützt Host-Handover", async () => {
+    type WsListener = (data: unknown, client: McpBridgeClient) => void;
+    const bridge = new McpBridge();
+    const handlers = new Map<string, WsListener>();
+    const channel: McpWebSocketChannel = {
+      on: (event, listener) => {
+        handlers.set(event, listener);
+      },
+    };
+    bridge.attach(channel);
+
+    const chromeHost = createFakeClient();
+    const firefoxGuest = createFakeClient();
+
+    // Chrome öffnet zuerst (Host), danach öffnet Firefox solo und übernimmt vorübergehend den Slot
+    handlers.get(MCP_EVENT_HELLO)?.({}, chromeHost);
+    handlers.get(MCP_EVENT_HELLO)?.({}, firefoxGuest);
+    expect(bridge.clientCount).toBe(2);
+
+    // Firefox tritt als Nicht-Host bei -> local HMR Effect meldet sich ab -> Aufrufe gehen wieder an Chrome
+    expect(shouldRegisterLocalMcpChannel({ send: vi.fn(), on: vi.fn(), off: vi.fn() }, true)).toBe(false);
+    expect(shouldRegisterLocalMcpChannel({ send: vi.fn(), on: vi.fn(), off: vi.fn() }, false)).toBe(true);
+    handlers.get(MCP_EVENT_BYE)?.({}, firefoxGuest);
+    expect(bridge.clientCount).toBe(1);
+
+    const hostCall = bridge.call("move_elements", {});
+    bridge.handleResponse({ id: chromeHost.lastRequest().id, result: "chrome-host" });
+    await expect(hostCall).resolves.toBe("chrome-host");
+
+    // Host-Handover an Firefox: Chrome sendet BYE, Firefox sendet HELLO -> Firefox wird aktiver Host
+    handlers.get(MCP_EVENT_BYE)?.({}, chromeHost);
+    handlers.get(MCP_EVENT_HELLO)?.({}, firefoxGuest);
+    const handoverCall = bridge.call("move_elements", {});
+    bridge.handleResponse({ id: firefoxGuest.lastRequest().id, result: "firefox-host" });
+    await expect(handoverCall).resolves.toBe("firefox-host");
   });
 });

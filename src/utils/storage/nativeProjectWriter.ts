@@ -43,7 +43,7 @@ export type NativeProjectSerializeOptions = {
 
 const FALLBACK_APP_VERSION = "0.0.0-dev";
 
-function resolveAppVersion(override?: string): string {
+export function resolveNativeAppVersion(override?: string): string {
   if (override && override.trim() !== "") {
     return override.trim();
   }
@@ -75,7 +75,7 @@ function mergeUniqueById<T>(primary: T[], secondary: T[], getId: (item: T) => st
   return result;
 }
 
-function serializePinSymbol(
+export function serializePinSymbol(
   sym: CircuitSymbol,
   pinById: ReadonlyMap<string, Pin>,
 ): NativePinElement {
@@ -106,7 +106,7 @@ function serializePinSymbol(
   };
 }
 
-function serializeCircuitElement(sym: CircuitSymbol): NativeCircuitElement | null {
+export function serializeCircuitElement(sym: CircuitSymbol): NativeCircuitElement | null {
   const base = {
     symbolId: sym.circuitSymbolId,
     x: sym.x,
@@ -301,7 +301,7 @@ function serializeCircuitElement(sym: CircuitSymbol): NativeCircuitElement | nul
   }
 }
 
-function serializeWire(wire: Wire): NativeWire | null {
+export function serializeWire(wire: Wire): NativeWire | null {
   if (wire.x1 === wire.x2 && wire.y1 === wire.y2) {
     return null;
   }
@@ -314,7 +314,7 @@ function serializeWire(wire: Wire): NativeWire | null {
   };
 }
 
-function serializeTextNote(note: TextNote): NativeTextNote {
+export function serializeTextNote(note: TextNote): NativeTextNote {
   return {
     textNoteId: note.textNoteId,
     x: note.x,
@@ -329,7 +329,7 @@ function serializeTextNote(note: TextNote): NativeTextNote {
   };
 }
 
-function serializeLogicalCircuit(
+export function serializeLogicalCircuitToNative(
   lc: LogicalCircuit,
   project: CircuitProject,
   overrideEntities?: {
@@ -433,7 +433,7 @@ export function buildNativeProjectDocument(
   return {
     format: NATIVE_PROJECT_FORMAT,
     schemaVersion: NATIVE_PROJECT_SCHEMA_VERSION,
-    appVersion: resolveAppVersion(options?.appVersion),
+    appVersion: resolveNativeAppVersion(options?.appVersion),
     project: {
       projectId: project.project.projectId,
       name: project.project.name,
@@ -448,7 +448,44 @@ export function buildNativeProjectDocument(
       categoryPrimitivesCollapsed: Boolean(project.project.categoryPrimitivesCollapsed),
     },
     collapsedCategories,
-    logicalCircuits: project.logicalCircuits.map((lc) => serializeLogicalCircuit(lc, project)),
+    logicalCircuits: project.logicalCircuits.map((lc) => serializeLogicalCircuitToNative(lc, project)),
+  };
+}
+
+// Erstellt aus nativen Schaltplänen und einer Einstiegs-Schaltung ein vollständiges NativeProjectDocument
+export function buildNativeProjectDocumentFromCircuits(
+  logicalCircuits: NativeLogicalCircuit[],
+  rootCircuitId: string,
+  options?: NativeProjectSerializeOptions & {
+    projectId?: string;
+    projectName?: string;
+    projectNote?: string;
+  },
+): NativeProjectDocument {
+  const rootCircuit = logicalCircuits.find((lc) => lc.logicalCircuitId === rootCircuitId);
+  if (!rootCircuit) {
+    throw new Error(`Schaltplan "${rootCircuitId}" wurde nicht gefunden.`);
+  }
+
+  return {
+    format: NATIVE_PROJECT_FORMAT,
+    schemaVersion: NATIVE_PROJECT_SCHEMA_VERSION,
+    appVersion: resolveNativeAppVersion(options?.appVersion),
+    project: {
+      projectId: options?.projectId ?? rootCircuit.logicalCircuitId,
+      name: options?.projectName ?? rootCircuit.name,
+      note: options?.projectNote ?? rootCircuit.note,
+      zoom: 1,
+      frequency: 10,
+      isMaximumSpeed: false,
+      logicalCircuitId: rootCircuit.logicalCircuitId,
+      startupCircuitId: null,
+      categoryTextNoteCollapsed: false,
+      categoryInputOutputCollapsed: false,
+      categoryPrimitivesCollapsed: false,
+    },
+    collapsedCategories: [],
+    logicalCircuits,
   };
 }
 
@@ -526,18 +563,18 @@ export function buildNativeSelectionDocument(
 
   collectTransitiveSubCircuits(selectedSymbols);
 
-  const rootSnippetCircuit = serializeLogicalCircuit(circuit, project, {
+  const rootSnippetCircuit = serializeLogicalCircuitToNative(circuit, project, {
     symbols: selectedSymbols,
     wires: selectedWires,
     textNotes: selectedNotes,
   });
 
-  const subSnippetCircuits = collectedSubCircuits.map((subLc) => serializeLogicalCircuit(subLc, project));
+  const subSnippetCircuits = collectedSubCircuits.map((subLc) => serializeLogicalCircuitToNative(subLc, project));
 
   return {
     format: NATIVE_SNIPPET_FORMAT,
     schemaVersion: NATIVE_PROJECT_SCHEMA_VERSION,
-    appVersion: resolveAppVersion(options?.appVersion),
+    appVersion: resolveNativeAppVersion(options?.appVersion),
     rootCircuitId: circuit.logicalCircuitId,
     logicalCircuits: [rootSnippetCircuit, ...subSnippetCircuits],
   };

@@ -24,6 +24,8 @@ import type Sensor from "../../types/circuit/sensor";
 import type Sound from "../../types/circuit/sound";
 import type Splitter from "../../types/circuit/splitter";
 import type Synthesizer from "../../types/circuit/synthesizer";
+import type { CollabSoftLockEntry } from "../../types/collab/modelSyncMessage";
+import type CollabRemoteSelectionOwner from "../../types/collab/remoteEntityHighlight";
 import type State from "../../types/simulation/state";
 import { STATE_OFF, STATE_ON1 } from "../../types/simulation/state";
 
@@ -45,6 +47,7 @@ import {
   getRotationAngle,
   getRotationCenter,
 } from "../../utils/circuitLayout";
+import { getParticipantContrastTextColor } from "../../utils/collabParticipantColors";
 import { GRID_SIZE } from "../../utils/coordinateSystem";
 import { keyboardEventToWpfKeyCode } from "../../utils/keyGesture";
 
@@ -91,11 +94,16 @@ const AI_HIGHLIGHT_PULSE = keyframes({
 
 type CircuitSymbolViewProps = React.ComponentPropsWithoutRef<"g"> & {
   symbol: CircuitSymbol;
+  isPreview?: boolean;
   isSelected?: boolean;
   isCandidateSelected?: boolean;
   isOnlySelected?: boolean;
   isAiHighlighted?: boolean;
   isCleanUpDimmed?: boolean;
+  foreignLock?: CollabSoftLockEntry | null;
+  foreignLockColor?: string;
+  foreignSelections?: ReadonlyArray<CollabRemoteSelectionOwner>;
+  isReadOnly?: boolean;
   onSymbolPointerDown?: (event: React.PointerEvent<SVGGElement>, symbol: CircuitSymbol) => void;
   onSymbolDoubleClick?: (event: React.MouseEvent<SVGGElement>, symbol: CircuitSymbol) => void;
   onResizeHandlePointerDown?: (
@@ -105,6 +113,20 @@ type CircuitSymbolViewProps = React.ComponentPropsWithoutRef<"g"> & {
     hy: 0 | 1 | 2,
   ) => void;
 };
+
+// Ermittelt die kompakte Badge-Beschriftung für fremdselektierte Elemente inklusive Mehrfach-Auswahl
+function formatForeignSelectionLabel(owners: ReadonlyArray<CollabRemoteSelectionOwner>): string {
+  const primary = owners[0];
+  if (!primary) {
+    return "";
+  }
+  const baseName = primary.displayName.length > 18
+    ? `${primary.displayName.slice(0, 17)}…`
+    : primary.displayName;
+  const prefix = primary.hasOpenDialog ? "✎ " : "";
+  const extraSuffix = owners.length > 1 ? ` +${owners.length - 1}` : "";
+  return `${prefix}${baseName}${extraSuffix}`;
+}
 
 // Ermittelt die Paletten-Gatterform und Eingangsanzahl für ein beliebiges Circuit-Objekt
 function getPaletteGateType(circuit: Circuit): {
@@ -575,9 +597,14 @@ const CircuitSymbolView = styled(({
   isOnlySelected = true,
   isAiHighlighted = false,
   isCleanUpDimmed = false,
+  foreignLock = null,
+  foreignLockColor,
+  foreignSelections,
+  isReadOnly = false,
   onSymbolPointerDown,
   onSymbolDoubleClick,
   onResizeHandlePointerDown,
+  isPreview = false,
   ...other
 }: CircuitSymbolViewProps) => {
   const { t } = useTranslation();
@@ -599,7 +626,9 @@ const CircuitSymbolView = styled(({
     selectedCircuitMap,
     setSensorValue,
   } = React.useContext(SimulationContext);
-  const activeCircuitMap = selectedCircuitMap ?? circuitMap;
+  const effectiveIsSimulating = isPreview ? false : isSimulating;
+  const effectiveSnapshot = isPreview ? null : snapshot;
+  const activeCircuitMap = isPreview ? null : (selectedCircuitMap ?? circuitMap);
   const gateInfo = getPaletteGateType(symbol.circuit);
   const isSubCircuit = symbol.circuit.kind === "logicalCircuit";
 
@@ -642,9 +671,12 @@ const CircuitSymbolView = styled(({
   const baseTooltipText = trimmedNote
     ? `${baseName}\n\n${trimmedNote}`
     : baseName;
-  const tooltipText = isCleanUpDimmed
+  const baseWithCleanUp = isCleanUpDimmed
     ? `${baseTooltipText}\n${t("canvas.symbol.unusedTooltip")}`
     : baseTooltipText;
+  const tooltipText = foreignLock
+    ? `${baseWithCleanUp}\n🔒 ${t("collabSync.lockedByTooltip", { name: foreignLock.ownerDisplayName })}`
+    : baseWithCleanUp;
 
   const {
     displayValue,
@@ -658,7 +690,7 @@ const CircuitSymbolView = styled(({
     graphicsVram,
     graphicsBitmapStride,
     graphicsVramRevision,
-  } = resolveSymbolRenderState(symbol, gateInfo, isSimulating, snapshot, activeCircuitMap);
+  } = resolveSymbolRenderState(symbol, gateInfo, effectiveIsSimulating, effectiveSnapshot, activeCircuitMap);
 
   const memoryCircuit = symbol.circuit.kind === "memory" ? (symbol.circuit as Memory) : null;
   const graphicsCircuit = symbol.circuit.kind === "graphicsArray"
@@ -669,7 +701,7 @@ const CircuitSymbolView = styled(({
   const synthesizerCircuit =
     symbol.circuit.kind === "synthesizer" ? (symbol.circuit as Synthesizer) : null;
   const isInteractiveSensor = Boolean(
-    isSimulating
+    effectiveIsSimulating
     && sensorCircuit
     && (sensorCircuit.sensorType === "manual"
       || sensorCircuit.sensorType === "ascii"
@@ -702,7 +734,7 @@ const CircuitSymbolView = styled(({
   const subCircuitMap = isSubCircuit ? activeCircuitMap?.child(symbol) : undefined;
   const hasPinStemLines =
     effectiveSubShape === "mux" || effectiveSubShape === "demux" || effectiveSubShape === "alu";
-  const chipLabel = subCircuit ? (subCircuit.notation || subCircuit.name) : symbol.circuit.name;
+  const chipLabel = subCircuit ? subCircuit.notation : symbol.circuit.name;
   const hasTopPins = isSubCircuit && symbol.jams.some((j) => j.pin.pinSide === "top");
   const insideChipLabelX =
     effectiveSubShape === "alu"
@@ -726,25 +758,64 @@ const CircuitSymbolView = styled(({
   );
 
   const isMatrix = symbol.circuit.kind === "ledMatrix";
-  const isSimulatingButton = isSimulating && symbol.circuit.kind === "circuitButton";
+  const isSimulatingButton = effectiveIsSimulating && symbol.circuit.kind === "circuitButton";
   const selectionPadding = isMatrix ? 6 : 3;
   const selectionRx = isMatrix ? 4 : 2;
+  const lockOwnerLabel = foreignLock
+    ? (foreignLock.ownerDisplayName.length > 20
+      ? `${foreignLock.ownerDisplayName.slice(0, 19)}…`
+      : foreignLock.ownerDisplayName)
+    : "";
+  const lockBadgeText = lockOwnerLabel ? `🔒 ${lockOwnerLabel}` : "";
+  const lockBadgeWidth = Math.max(46, lockBadgeText.length * 5.6 + 12);
+  const lockBadgeX = (pixelWidth - lockBadgeWidth) / 2;
+  const lockBadgeY = -selectionPadding - 19;
+
+  const effectiveForeignSelections = React.useMemo(
+    () => {
+      if (!foreignSelections || foreignSelections.length === 0) {
+        return [];
+      }
+      return foreignLock
+        ? foreignSelections.filter((owner) => owner.peerId !== foreignLock.ownerPeerId)
+        : [...foreignSelections];
+    },
+    [foreignLock, foreignSelections],
+  );
+  const primaryForeignSelection = effectiveForeignSelections[0] ?? null;
+  const foreignSelectionBadgeText = primaryForeignSelection
+    ? formatForeignSelectionLabel(effectiveForeignSelections)
+    : "";
+  const foreignSelectionBadgeWidth = Math.max(40, foreignSelectionBadgeText.length * 5.6 + 12);
+  const foreignSelectionBadgeX = (pixelWidth - foreignSelectionBadgeWidth) / 2;
+  const foreignSelectionBadgeY = -selectionPadding - 17;
 
   return (
     <g
       {...other}
       data-component="CircuitSymbolView"
       data-symbol-id={symbol.circuitSymbolId}
+      data-preview={isPreview ? "true" : undefined}
       data-sim-button={isSimulatingButton ? "true" : undefined}
       data-ai-highlighted={isAiHighlighted ? "true" : undefined}
       data-cleanup-unused={isCleanUpDimmed ? "true" : undefined}
+      data-foreign-locked={foreignLock ? "true" : undefined}
+      data-locked-by={foreignLock?.ownerDisplayName}
+      data-lock-color={foreignLock ? foreignLockColor : undefined}
+      data-foreign-selected={primaryForeignSelection ? "true" : undefined}
+      data-foreign-selected-by={
+        effectiveForeignSelections.length > 0
+          ? effectiveForeignSelections.map((owner) => owner.displayName).join(", ")
+          : undefined
+      }
+      data-readonly={isReadOnly ? "true" : undefined}
       opacity={isCleanUpDimmed && !isSelected && !isCandidateSelected ? CLEANUP_DIM_OPACITY : undefined}
       transform={transform}
       onPointerDown={(event) => onSymbolPointerDown?.(event, symbol)}
       onDoubleClick={(event) => onSymbolDoubleClick?.(event, symbol)}
     >
       {/* Nativer Browser-Tooltip bei Mausberührung */}
-      <title>{tooltipText}</title>
+      {!isPreview && <title>{tooltipText}</title>}
 
       {/* Dezente, zeitlich begrenzte Hervorhebung für von der KI platzierte/geänderte Bausteine */}
       {isAiHighlighted && (
@@ -756,6 +827,88 @@ const CircuitSymbolView = styled(({
           rx={selectionRx + 2}
           className="ai-highlight-box"
         />
+      )}
+
+      {/* Soft-Lock-Markierung eines anderen Teilnehmers in dessen lokaler Teilnehmerfarbe */}
+      {!isPreview && foreignLock && (
+        <>
+          <rect
+            x={-selectionPadding - 1}
+            y={-selectionPadding - 1}
+            width={pixelWidth + (selectionPadding + 1) * 2}
+            height={pixelHeight + (selectionPadding + 1) * 2}
+            rx={selectionRx + 1}
+            className="soft-lock-box"
+            style={foreignLockColor
+              ? {
+                stroke: foreignLockColor,
+                fill: foreignLockColor,
+                fillOpacity: 0.16,
+              }
+              : undefined}
+          />
+          <g className="soft-lock-badge">
+            <rect
+              x={lockBadgeX}
+              y={lockBadgeY}
+              width={lockBadgeWidth}
+              height={15}
+              rx={4}
+              className="soft-lock-badge-bg"
+              style={foreignLockColor ? { stroke: foreignLockColor } : undefined}
+            />
+            <text
+              x={pixelWidth / 2}
+              y={lockBadgeY + 10.5}
+              textAnchor="middle"
+              className="soft-lock-badge-text"
+            >
+              {lockBadgeText}
+            </text>
+          </g>
+        </>
+      )}
+
+      {/* Farbige Markierung, wenn ein anderer Teilnehmer dieses Bauteil aktuell selektiert oder im Dialog geöffnet hat */}
+      {!isPreview && !foreignLock && primaryForeignSelection && (
+        <>
+          <rect
+            x={-selectionPadding - 1}
+            y={-selectionPadding - 1}
+            width={pixelWidth + (selectionPadding + 1) * 2}
+            height={pixelHeight + (selectionPadding + 1) * 2}
+            rx={selectionRx + 1}
+            className="foreign-selection-box"
+            style={{
+              stroke: primaryForeignSelection.color,
+              fill: primaryForeignSelection.color,
+              fillOpacity: 0.12,
+            }}
+          />
+          <g className="foreign-selection-badge">
+            <rect
+              x={foreignSelectionBadgeX}
+              y={foreignSelectionBadgeY}
+              width={foreignSelectionBadgeWidth}
+              height={14}
+              rx={4}
+              className="foreign-selection-badge-bg"
+              style={{
+                fill: primaryForeignSelection.color,
+                stroke: primaryForeignSelection.color,
+              }}
+            />
+            <text
+              x={pixelWidth / 2}
+              y={foreignSelectionBadgeY + 10}
+              textAnchor="middle"
+              className="foreign-selection-badge-text"
+              style={{ fill: getParticipantContrastTextColor(primaryForeignSelection.color) }}
+            >
+              {foreignSelectionBadgeText}
+            </text>
+          </g>
+        </>
       )}
 
       {/* Visueller Auswahlrahmen bei selektiertem Baustein */}
@@ -872,8 +1025,8 @@ const CircuitSymbolView = styled(({
                 subCircuit,
                 pixelWidth,
                 pixelHeight,
-                isSimulating,
-                snapshot,
+                effectiveIsSimulating,
+                effectiveSnapshot,
                 subCircuitMap,
                 symbol.circuitSymbolId,
                 subCircuitMap
@@ -920,7 +1073,7 @@ const CircuitSymbolView = styled(({
             );
           })}
           {/* Chip-Bezeichnung: optional frei stehend oberhalb oder zentriert im Gehäuse */}
-          {subCircuit.showLabelAbove ? (
+          {chipLabel.trim() !== "" && (subCircuit.showLabelAbove ? (
             <text
               x={pixelWidth / 2}
               y={hasTopPins ? -9 : -6}
@@ -938,7 +1091,7 @@ const CircuitSymbolView = styled(({
             >
               {chipLabel}
             </text>
-          ) : null}
+          ) : null)}
         </g>
       ) : gateInfo ? (
         <SymbolRenderer
@@ -1071,7 +1224,13 @@ const CircuitSymbolView = styled(({
       )}
 
       {/* 8 Resize-Anfasser für dynamisch größenveränderbare Symbole */}
-      {!isSimulating && isSelected && isOnlySelected && isResizableCircuitKind(symbol.circuit.kind) && (
+      {!effectiveIsSimulating &&
+        !isPreview &&
+        !foreignLock &&
+        !isReadOnly &&
+        isSelected &&
+        isOnlySelected &&
+        isResizableCircuitKind(symbol.circuit.kind) && (
         <g className="resize-markers">
           {RESIZE_HANDLES.map((handle) => {
             const hxPos = (pixelWidth * handle.hx) / 2;
@@ -1099,8 +1258,68 @@ const CircuitSymbolView = styled(({
   cursor: "move",
   userSelect: "none",
 
+  "&[data-preview=\"true\"]": {
+    cursor: "inherit",
+    pointerEvents: "none",
+  },
+
   "&[data-sim-button=\"true\"]": {
     cursor: "pointer",
+  },
+
+  "&[data-foreign-locked=\"true\"]": {
+    cursor: "not-allowed",
+  },
+
+  "&[data-readonly=\"true\"]:not([data-sim-button=\"true\"]):not([data-foreign-locked=\"true\"])": {
+    cursor: "default",
+  },
+
+  "& > .soft-lock-box": {
+    fill: "var(--color-warning-bg)",
+    fillOpacity: 0.28,
+    stroke: "var(--color-warning-border)",
+    strokeWidth: 1.75,
+    strokeDasharray: "4 2",
+    pointerEvents: "none",
+  },
+
+  "& > .soft-lock-badge": {
+    pointerEvents: "none",
+
+    "& > .soft-lock-badge-bg": {
+      fill: "var(--color-bg-elevated)",
+      stroke: "var(--color-warning-border)",
+      strokeWidth: 1,
+    },
+
+    "& > .soft-lock-badge-text": {
+      fill: "var(--color-text-primary)",
+      fontSize: "9px",
+      fontWeight: 700,
+      fontFamily: "var(--font-family-base)",
+    },
+  },
+
+  "& > .foreign-selection-box": {
+    fillOpacity: 0.12,
+    strokeWidth: 1.5,
+    strokeDasharray: "3 2",
+    pointerEvents: "none",
+  },
+
+  "& > .foreign-selection-badge": {
+    pointerEvents: "none",
+
+    "& > .foreign-selection-badge-bg": {
+      strokeWidth: 1,
+    },
+
+    "& > .foreign-selection-badge-text": {
+      fontSize: "8.5px",
+      fontWeight: 700,
+      fontFamily: "var(--font-family-base)",
+    },
   },
 
   "& > .ai-highlight-box": {

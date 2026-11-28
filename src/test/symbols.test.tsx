@@ -21,6 +21,7 @@ import { buildComponentCatalog } from "../utils/componentCatalog";
 import { GRID_SIZE } from "../utils/coordinateSystem";
 
 import CircuitSymbolView from "../components/circuitCanvas/circuitSymbolView";
+import SubCircuitPreview from "../components/componentPalette/subCircuitPreview";
 import LedDisplayShape from "../components/symbols/display/ledDisplayShape";
 import LedMatrixShape from "../components/symbols/display/ledMatrixShape";
 import SevenSegmentShape from "../components/symbols/display/sevenSegmentShape";
@@ -538,25 +539,25 @@ describe("Gate Symbols & Pin Layouts", () => {
     expect(rendererHtml).toContain("class=\"pin-point pin-none\"");
   });
 
-  it("resolves jamNotation labels with pin name prefix fallback via getPinJamDisplayLabel", () => {
+  it("resolves jamNotation labels via getPinJamDisplayLabel without falling back to pin name when empty", () => {
     const { pin: leftExplicit } = createPinCircuit("p1", "sub", "input", "ClockInput", 1, "left", false, 0, 2, 2, "CLK");
     const { pin: topExplicit } = createPinCircuit("p2", "sub", "input", "AddressBus", 4, "top", false, 0, 2, 2, "ADDR");
-    const { pin: rightFallback } = createPinCircuit("p3", "sub", "output", "DataOut", 1, "right");
-    const { pin: bottomFallback } = createPinCircuit("p4", "sub", "input", "Address", 1, "bottom");
+    const { pin: rightEmpty } = createPinCircuit("p3", "sub", "output", "DataOut", 1, "right");
+    const { pin: bottomEmpty } = createPinCircuit("p4", "sub", "input", "Address", 1, "bottom", false, 0, 2, 2, "");
 
     expect(getPinJamDisplayLabel(leftExplicit)).toBe("CLK");
     expect(getPinJamDisplayLabel(topExplicit)).toBe("ADDR");
-    expect(getPinJamDisplayLabel(rightFallback)).toBe("Da");
-    expect(getPinJamDisplayLabel(bottomFallback)).toBe("Addr");
+    expect(getPinJamDisplayLabel(rightEmpty)).toBe("");
+    expect(getPinJamDisplayLabel(bottomEmpty)).toBe("");
   });
 
-  it("renders jamNotation and fallback pin labels at all four edges of a sub-circuit symbol", () => {
+  it("renders jamNotation pin labels at configured edges and omits empty jamNotation labels", () => {
     const baseProject = createEmptyCircuitProject("SubChip Jam Test", "Main", "main");
     const subLc = createDefaultLogicalCircuit("sub-alu", "TestChip");
     const pLeft = createPinCircuit("pin-l", subLc.logicalCircuitId, "input", "Clock", 1, "left", false, 0, 2, 2, "CLK");
     const pRight = createPinCircuit("pin-r", subLc.logicalCircuitId, "output", "OutQ", 1, "right", false, 0, 2, 2, "Q");
     const pTop = createPinCircuit("pin-t", subLc.logicalCircuitId, "input", "Enable", 1, "top", false, 0, 2, 2, "EN");
-    const pBottom = createPinCircuit("pin-b", subLc.logicalCircuitId, "input", "Reset", 1, "bottom");
+    const pBottom = createPinCircuit("pin-b", subLc.logicalCircuitId, "input", "Reset", 1, "bottom", false, 0, 2, 2, "");
 
     subLc.logicalPins.push(pLeft.pin, pRight.pin, pTop.pin, pBottom.pin);
     baseProject.pins.push(pLeft.pin, pRight.pin, pTop.pin, pBottom.pin);
@@ -589,8 +590,55 @@ describe("Gate Symbols & Pin Layouts", () => {
     expect(html).toContain("text-anchor=\"middle\"");
     expect(html).toContain(">EN</text>");
 
-    expect(html).toContain("data-pin-side=\"bottom\"");
-    expect(html).toContain(">Rese</text>");
+    expect(html).not.toContain("data-pin-side=\"bottom\"");
+    expect(html).not.toContain(">Rese</text>");
+  });
+
+  it("omits chip-name text in CircuitSymbolView and SubCircuitPreview when notation is empty (B-008)", () => {
+    const proj = createEmptyCircuitProject("Empty Notation Test", "Main", "main");
+    const subLc = createDefaultLogicalCircuit("sub-blank", "HiddenCircuitName");
+    subLc.notation = "";
+    const pIn = createPinCircuit("pin-blank-in", subLc.logicalCircuitId, "input", "X0", 1, "left", false, 0, 2, 2, "");
+    const ledGate = createGate("led", 1, false, "green");
+    subLc.logicalPins.push(pIn.pin);
+    subLc.circuitSymbols.push(
+      createCircuitSymbol(pIn.pinCircuit, subLc.logicalCircuitId, 2, 2, "up", "sym-blank-pin"),
+      createCircuitSymbol(ledGate, subLc.logicalCircuitId, 6, 2, "up", "sym-blank-led"),
+    );
+    proj.pins.push(pIn.pin);
+    proj.logicalCircuits.push(subLc);
+    proj.circuits.set(subLc.circuitId, subLc);
+
+    const syncedRect = syncProjectLogicalCircuits(proj);
+    const rectLc = syncedRect.logicalCircuits.find((c) => c.logicalCircuitId === "sub-blank")!;
+    const rectSym = createCircuitSymbol(rectLc, "main", 4, 4, "up", "sym-sub-rect");
+    const rectHtml = renderToStaticMarkup(
+      <svg>
+        <CircuitSymbolView symbol={rectSym} />
+      </svg>,
+    );
+    expect(rectHtml).not.toContain("<text");
+    expect(rectHtml).not.toContain(">HiddenCircuitName</text>");
+    expect(rectHtml).not.toContain("class=\"pin-jam-label\"");
+    expect(rectHtml).toContain("<title>HiddenCircuitName</title>");
+
+    rectLc.circuitShape = "display";
+    rectLc.isDisplay = true;
+    rectLc.showLabelAbove = true;
+    const syncedDisp = syncProjectLogicalCircuits(syncedRect);
+    const dispLc = syncedDisp.logicalCircuits.find((c) => c.logicalCircuitId === "sub-blank")!;
+    const dispSym = createCircuitSymbol(dispLc, "main", 4, 4, "up", "sym-sub-disp");
+    const dispHtml = renderToStaticMarkup(
+      <svg>
+        <CircuitSymbolView symbol={dispSym} />
+      </svg>,
+    );
+    expect(dispHtml).not.toContain("<text");
+    expect(dispHtml).not.toContain(">HiddenCircuitName</text>");
+
+    const previewHtml = renderToStaticMarkup(<SubCircuitPreview circuit={dispLc} />);
+    expect(previewHtml).not.toContain("<text");
+    expect(previewHtml).not.toContain("HiddenCircuitName");
   });
 
   it("renders all six sub-circuit shapes (rectangular, flipFlop, mux, demux, alu, display) accurately", () => {

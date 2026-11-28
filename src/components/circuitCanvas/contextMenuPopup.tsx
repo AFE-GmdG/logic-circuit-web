@@ -41,11 +41,15 @@ const ContextMenuPopup = styled(({
   React.useLayoutEffect(
     () => {
       if (!isOpen || !menuRef.current) {
-        setMeasuredSize(null);
+        setMeasuredSize((prev) => (prev === null ? prev : null));
         return;
       }
       const rect = menuRef.current.getBoundingClientRect();
-      setMeasuredSize({ width: rect.width, height: rect.height });
+      setMeasuredSize((prev) => (
+        prev && prev.width === rect.width && prev.height === rect.height
+          ? prev
+          : { width: rect.width, height: rect.height }
+      ));
     },
     [
       isOpen,

@@ -5,9 +5,11 @@ import { useTranslation } from "react-i18next";
 
 import CanvasContext from "../../contexts/canvasContext";
 import CircuitContext from "../../contexts/circuitContext";
+import CollabContext, { type CollabContextType } from "../../contexts/collabContext";
 import SimulationContext from "../../contexts/simulationContext";
 import useMcpBridge, { type McpBridgeController } from "../../hooks/useMcpBridge";
 
+import type CollabRole from "../../types/collab/collabRole";
 import type McpBridgeStatus from "../../types/mcp/mcpBridgeStatus";
 import type AppLanguage from "../../types/settings/appLanguage";
 
@@ -19,16 +21,24 @@ import {
   resolveEffectiveLanguage,
 } from "../../i18n";
 import { circuitContainsAudio } from "../../utils/circuitLayout";
+import { isCollabDisabledByEnv } from "../../utils/collabIceConfig";
 import { formatZoomPercentage } from "../../utils/coordinateSystem";
-import { clearMcpAccessKey, loadMcpAccessKey, saveMcpAccessKey } from "../../utils/mcpStorage";
+import { loadMcpAccessKey } from "../../utils/mcpStorage";
+import { loadSidecarBaseUrl, SIDECAR_SETTINGS_CHANGED_EVENT } from "../../utils/sidecarStorage";
+import { compareSidecarVersion, fetchMcpServerStatus, type SidecarVersionCheckResult } from "../../utils/sidecarVersion";
+import { OPEN_START_COLLAB_DIALOG_EVENT } from "../collab/startCollabSessionDialog";
 
 import LanguagePopover from "./languagePopover";
 import McpRemotePopover from "./mcpRemotePopover";
+import { OPEN_OPTIONS_DIALOG_EVENT } from "../app/optionsDialog";
+import { OPEN_SIDECAR_DOWNLOAD_EVENT } from "../app/sidecarDownloadDialog";
 
 type StatusBarProps = React.ComponentPropsWithoutRef<"footer"> & {
   mcpControllerOverride?: McpBridgeController;
+  collabOverride?: CollabContextType;
   initialPopoverOpen?: boolean;
   initialLanguagePopoverOpen?: boolean;
+  onOpenSidecarDownload?: () => void;
 };
 
 type TranslateFn = (key: string) => string;
@@ -71,14 +81,31 @@ function getMcpStatusTitle(status: McpBridgeStatus, t: TranslateFn): string {
   }
 }
 
+function getCollabRoleShortLabel(role: CollabRole | null, t: TranslateFn): string {
+  switch (role) {
+    case "host":
+      return t("statusBar.collab.roleHost");
+    case "collaborator":
+      return t("statusBar.collab.roleCollaborator");
+    case "guest":
+      return t("statusBar.collab.roleGuest");
+    default:
+      return t("statusBar.collab.startLabel");
+  }
+}
+
 const StatusBar = styled(({
   mcpControllerOverride,
+  collabOverride,
   initialPopoverOpen = false,
   initialLanguagePopoverOpen = false,
+  onOpenSidecarDownload,
   ...other
 }: StatusBarProps) => {
   const { t, i18n } = useTranslation();
   const circuitContext = React.useContext(CircuitContext);
+  const liveCollab = React.useContext(CollabContext);
+  const collab = collabOverride ?? liveCollab;
   const {
     cursor,
     viewport,
@@ -93,6 +120,7 @@ const StatusBar = styled(({
     isPaused,
     isRunning,
     isOscillating,
+    isCollabSnapshotSimulation,
     startSimulation,
     step,
     stopSimulation,
@@ -100,9 +128,24 @@ const StatusBar = styled(({
   const liveMcp = useMcpBridge();
   const mcp = mcpControllerOverride ?? liveMcp;
   const { status: mcpStatus, mode: mcpMode } = mcp;
+  const isCollabDisabled = collab?.isDisabled ?? isCollabDisabledByEnv();
+  const isMcpBlockedByCollab = Boolean(mcp.isBlockedByCollab || collab?.isMcpBlockedByCollab);
+  const isSnapshotSim = Boolean(
+    isSimulating &&
+    collab?.isInSession &&
+    (isCollabSnapshotSimulation || collab.modelSyncState?.isLocalSimulationBuffered),
+  );
+  const pendingSimDeltaCount = collab?.modelSyncState?.pendingSimulationDeltaCount ?? 0;
+  const requiresSimResync = Boolean(
+    collab?.modelSyncState?.requiresResyncAfterSimulation ||
+    collab?.modelSyncState?.hasPendingProjectSwitchDuringSim,
+  );
+  const hasPendingSnapshotUpdate = pendingSimDeltaCount > 0 || requiresSimResync;
   const [popoverOpen, setPopoverOpen] = React.useState(initialPopoverOpen);
   const [languagePopoverOpen, setLanguagePopoverOpen] = React.useState(initialLanguagePopoverOpen);
   const [accessKey, setAccessKey] = React.useState(() => loadMcpAccessKey());
+  const [sidecarUrl, setSidecarUrl] = React.useState(() => loadSidecarBaseUrl());
+  const [versionCheck, setVersionCheck] = React.useState<SidecarVersionCheckResult | null>(null);
   const languageWrapperRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(
@@ -162,20 +205,53 @@ const StatusBar = styled(({
     [circuitContext],
   );
 
-  const handleAccessKeyChange = React.useCallback(
-    (nextKey: string) => {
-      setAccessKey(nextKey);
-      saveMcpAccessKey(nextKey);
+  React.useEffect(
+    () => {
+      if (typeof window === "undefined") {
+        return undefined;
+      }
+
+      const handleSettingsChanged = () => {
+        setAccessKey(loadMcpAccessKey());
+        setSidecarUrl(loadSidecarBaseUrl());
+      };
+
+      window.addEventListener(SIDECAR_SETTINGS_CHANGED_EVENT, handleSettingsChanged);
+      window.addEventListener("storage", handleSettingsChanged);
+      return () => {
+        window.removeEventListener(SIDECAR_SETTINGS_CHANGED_EVENT, handleSettingsChanged);
+        window.removeEventListener("storage", handleSettingsChanged);
+      };
     },
     [],
   );
 
-  const handleClearAccessKey = React.useCallback(
+  React.useEffect(
     () => {
-      setAccessKey("");
-      clearMcpAccessKey();
+      if (mcpMode !== "remote" || (mcpStatus !== "remote-active-self" && mcpStatus !== "remote-active-other")) {
+        setVersionCheck(null);
+        return undefined;
+      }
+
+      const controller = new AbortController();
+      const effectiveUrl = (mcp.sidecarBaseUrl ?? sidecarUrl).trim();
+      void fetchMcpServerStatus({
+        baseUrl: effectiveUrl.length > 0 ? effectiveUrl : undefined,
+        signal: controller.signal,
+      }).then((statusPayload) => {
+        if (!controller.signal.aborted && statusPayload) {
+          setVersionCheck(compareSidecarVersion(statusPayload.serverVersion));
+        }
+      });
+
+      return () => controller.abort();
     },
-    [],
+    [
+      mcp.sidecarBaseUrl,
+      mcpMode,
+      mcpStatus,
+      sidecarUrl,
+    ],
   );
 
   return (
@@ -294,21 +370,81 @@ const StatusBar = styled(({
                 ? t("statusBar.simPaused")
                 : t("statusBar.simRunning")}
         </span>
+        {isSnapshotSim && (
+          <span
+            className={`snapshot-sim-badge${hasPendingSnapshotUpdate ? " has-updates" : ""}`}
+            data-testid="status-bar-snapshot-sim-badge"
+            title={
+              requiresSimResync
+                ? t("statusBar.simSnapshotResyncTooltip")
+                : pendingSimDeltaCount > 0
+                  ? t("statusBar.simSnapshotPendingTooltip", { count: pendingSimDeltaCount })
+                  : t("statusBar.simSnapshotTooltip")
+            }
+          >
+            {requiresSimResync
+              ? t("statusBar.simSnapshotBadgeResync")
+              : pendingSimDeltaCount > 0
+                ? t("statusBar.simSnapshotBadgePending", { count: pendingSimDeltaCount })
+                : t("statusBar.simSnapshotBadge")}
+          </span>
+        )}
+        {!isCollabDisabled && (
+          <button
+            type="button"
+            className={`collab-status-button ${collab?.isInSession ? `active ${collab.transportState}` : "idle"}`}
+            data-testid="status-bar-collab-btn"
+            data-collab-active={collab?.isInSession ? "true" : "false"}
+            aria-expanded={collab?.isInSession ? collab.isParticipantsPanelOpen : undefined}
+            title={
+              collab?.isInSession
+                ? t("statusBar.collab.activeTitle", {
+                  role: getCollabRoleShortLabel(collab.selfRole, t),
+                  count: collab.participants.length,
+                })
+                : t("statusBar.collab.startTitle")
+            }
+            onClick={() => {
+              if (collab?.isInSession) {
+                collab.setParticipantsPanelOpen(!collab.isParticipantsPanelOpen);
+              } else if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent(OPEN_START_COLLAB_DIALOG_EVENT));
+              }
+            }}
+          >
+            <span className="collab-label">
+              {collab?.isInSession
+                ? t("statusBar.collab.activeLabel", {
+                  role: getCollabRoleShortLabel(collab.selfRole, t),
+                  count: collab.participants.length,
+                })
+                : t("statusBar.collab.startLabel")}
+            </span>
+            {collab?.isInSession && collab.raisedHandCount > 0 && (
+              <span className="collab-hand-count" data-testid="status-bar-collab-hands">
+                ✋ {collab.raisedHandCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {mcpMode === "disabled" ? null : mcpMode === "local" ? (
           <span
-            className={`mcp-indicator ${mcpStatus === "local-connected" ? "connected" : "connecting"}`}
-            title={getMcpStatusTitle(mcpStatus, t)}
+            className={`mcp-indicator ${isMcpBlockedByCollab ? "blocked" : mcpStatus === "local-connected" ? "connected" : "connecting"}`}
+            title={isMcpBlockedByCollab ? t("statusBar.mcp.titleBlockedByCollab") : getMcpStatusTitle(mcpStatus, t)}
             data-mcp-status={mcpStatus}
+            data-mcp-blocked={isMcpBlockedByCollab ? "true" : undefined}
           >
-            {getMcpRemoteLabel(mcpStatus, t)}
+            {isMcpBlockedByCollab ? t("statusBar.mcp.labelBlockedByCollab") : getMcpRemoteLabel(mcpStatus, t)}
           </span>
         ) : (
           <div className="mcp-remote-wrapper">
             <button
               type="button"
-              className={`mcp-remote-button ${mcpStatus}`}
-              title={getMcpStatusTitle(mcpStatus, t)}
+              className={`mcp-remote-button ${mcpStatus}${isMcpBlockedByCollab ? " blocked" : ""}`}
+              title={isMcpBlockedByCollab ? t("statusBar.mcp.titleBlockedByCollab") : getMcpStatusTitle(mcpStatus, t)}
               data-mcp-status={mcpStatus}
+              data-mcp-blocked={isMcpBlockedByCollab ? "true" : undefined}
               aria-expanded={popoverOpen}
               onClick={() => {
                 setPopoverOpen((prev) => {
@@ -320,7 +456,7 @@ const StatusBar = styled(({
                 });
               }}
             >
-              {getMcpRemoteLabel(mcpStatus, t)}
+              {isMcpBlockedByCollab ? t("statusBar.mcp.labelBlockedByCollab") : getMcpRemoteLabel(mcpStatus, t)}
             </button>
             <McpRemotePopover
               isOpen={popoverOpen}
@@ -329,10 +465,25 @@ const StatusBar = styled(({
               connectedTabCount={mcp.connectedTabCount}
               error={mcp.error}
               isSharedWorkerSupported={mcp.isSharedWorkerSupported}
-              accessKey={accessKey}
-              onAccessKeyChange={handleAccessKeyChange}
-              onClearAccessKey={handleClearAccessKey}
-              onConnect={() => mcp.connect(accessKey)}
+              sidecarUrl={sidecarUrl}
+              customSidecarRequired={mcp.customSidecarRequired}
+              isBlockedByCollab={isMcpBlockedByCollab}
+              versionCheck={versionCheck}
+              onOpenSettings={() => {
+                setPopoverOpen(false);
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent(OPEN_OPTIONS_DIALOG_EVENT, { detail: { tab: "sidecar" } }));
+                }
+              }}
+              onOpenSidecarDownload={() => {
+                setPopoverOpen(false);
+                if (onOpenSidecarDownload) {
+                  onOpenSidecarDownload();
+                } else if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent(OPEN_SIDECAR_DOWNLOAD_EVENT));
+                }
+              }}
+              onConnect={() => mcp.connect(accessKey, sidecarUrl)}
               onDisconnect={mcp.disconnect}
               onActivateThisTab={mcp.activateThisTab}
               onClose={() => setPopoverOpen(false)}
@@ -548,6 +699,85 @@ const StatusBar = styled(({
       color: "var(--color-text-muted)",
     },
 
+    "& > .snapshot-sim-badge": {
+      display: "inline-flex",
+      alignItems: "center",
+      padding: "0.08rem 0.4rem",
+      borderRadius: "0.25rem",
+      border: "1px solid var(--color-border-subtle)",
+      backgroundColor: "var(--color-bg-elevated)",
+      color: "var(--color-text-secondary)",
+      fontFamily: "var(--font-family-mono)",
+      fontSize: "0.68rem",
+      fontWeight: 600,
+
+      "&.has-updates": {
+        borderColor: "var(--color-warning)",
+        color: "var(--color-warning)",
+        backgroundColor: "var(--color-warning-bg)",
+      },
+    },
+
+    "& > .collab-status-button": {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "0.3rem",
+      padding: "0.1rem 0.45rem",
+      backgroundColor: "var(--color-bg-elevated)",
+      border: "1px solid var(--color-border-subtle)",
+      borderRadius: "0.25rem",
+      fontFamily: "var(--font-family-mono)",
+      fontSize: "0.7rem",
+      color: "var(--color-text-secondary)",
+      cursor: "pointer",
+      transition: "all 0.15s ease",
+
+      "&::before": {
+        content: "\"\"",
+        width: "0.45rem",
+        height: "0.45rem",
+        borderRadius: "50%",
+        backgroundColor: "var(--color-text-muted)",
+      },
+
+      "&:hover": {
+        borderColor: "var(--color-border-strong)",
+        color: "var(--color-text-primary)",
+      },
+
+      "&.active.connected": {
+        borderColor: "var(--color-status-running)",
+        color: "var(--color-text-primary)",
+
+        "&::before": {
+          backgroundColor: "var(--color-status-running)",
+        },
+      },
+
+      "&.active.degraded, &.active.reconnecting, &.active.migrating-host, &.active.connecting": {
+        borderColor: "var(--color-warning)",
+        color: "var(--color-text-primary)",
+
+        "&::before": {
+          backgroundColor: "var(--color-warning)",
+        },
+      },
+
+      "&.active.failed": {
+        borderColor: "var(--color-status-stopped)",
+        color: "var(--color-error-text)",
+
+        "&::before": {
+          backgroundColor: "var(--color-status-stopped)",
+        },
+      },
+
+      "& > .collab-hand-count": {
+        color: "var(--color-warning)",
+        fontWeight: 600,
+      },
+    },
+
     "& > .mcp-indicator": {
       display: "flex",
       alignItems: "center",
@@ -572,6 +802,15 @@ const StatusBar = styled(({
 
         "&::before": {
           backgroundColor: "var(--color-status-running)",
+        },
+      },
+
+      "&.blocked": {
+        borderColor: "var(--color-warning-border)",
+        color: "var(--color-warning)",
+
+        "&::before": {
+          backgroundColor: "var(--color-warning)",
         },
       },
     },
@@ -632,6 +871,15 @@ const StatusBar = styled(({
 
           "&::before": {
             backgroundColor: "var(--color-status-stopped)",
+          },
+        },
+
+        "&.blocked": {
+          color: "var(--color-warning)",
+          borderColor: "var(--color-warning-border)",
+
+          "&::before": {
+            backgroundColor: "var(--color-warning)",
           },
         },
       },

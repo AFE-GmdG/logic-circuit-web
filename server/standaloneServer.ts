@@ -8,6 +8,10 @@ import type McpBridgeResponse from "../src/types/mcp/mcpBridgeResponse.ts";
 import type PrivacyConfig from "../src/types/privacyConfig.ts";
 
 import {
+  COLLAB_CONFIG_PATH,
+  COLLAB_WS_PATH,
+} from "../src/collab/collabEvents.ts";
+import {
   MCP_EVENT_BYE,
   MCP_EVENT_ERROR,
   MCP_EVENT_HELLO,
@@ -16,20 +20,38 @@ import {
   MCP_EVENT_RESPONSE,
   MCP_HTTP_BASE_PATH,
   MCP_PRIVACY_PATH,
+  MCP_STREAMABLE_HTTP_PATH,
   MCP_WS_PATH,
 } from "../src/mcp/mcpEvents.ts";
 
+import readCollabConfigFromEnv, {
+  type CollabServerConfig,
+  sanitizeStunUrls,
+  toPublicCollabRuntimeConfig,
+} from "./collabConfig.ts";
+import CollabSignalingRelay from "./collabSignalingRelay.ts";
+import attachCollabWebSocket from "./collabWsHandler.ts";
+import McpHttpHandler from "./mcpHttpHandler.ts";
 import McpRelay, {
-  MissingSessionIdError,
   type RelayClient,
+  SessionLimitReachedError,
   UnauthorizedRelayError,
-  UnknownSessionError,
 } from "./mcpRelay.ts";
 import readPrivacyConfigFromEnv from "./privacyConfig.ts";
+import RateLimiter, { extractClientKey } from "./rateLimiter.ts";
 import WebSocketConnection from "./webSocketConnection.ts";
 
-const MAX_HTTP_BODY_BYTES = 2 * 1024 * 1024;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_VERSION = (
+  JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8")) as { version: string }
+).version;
+
 const HELLO_TIMEOUT_MS = 10000;
+const DEFAULT_RATE_WINDOW_MS = 60000;
+const DEFAULT_RATE_LIMIT_HTTP_PER_MIN = 60;
+const DEFAULT_RATE_LIMIT_STATUS_PER_MIN = 30;
+const DEFAULT_RATE_LIMIT_AUTH_FAIL_PER_MIN = 5;
+const DEFAULT_RATE_LIMIT_WS_PER_MIN = 10;
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -43,6 +65,14 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+export type StandaloneRateLimitOptions = {
+  windowMs?: number;
+  httpPerMin?: number;
+  statusPerMin?: number;
+  authFailPerMin?: number;
+  wsPerMin?: number;
+};
+
 export type StandaloneServerOptions = {
   host?: string;
   port?: number;
@@ -52,13 +82,21 @@ export type StandaloneServerOptions = {
   requestTimeoutMs?: number;
   gracePeriodMs?: number;
   heartbeatIntervalMs?: number;
+  maxSessions?: number;
+  maxHttpSessions?: number;
+  httpSessionTtlMs?: number;
+  maxConcurrentCallsPerSession?: number;
+  trustProxy?: boolean;
+  rateLimits?: StandaloneRateLimitOptions;
   staticDir?: string;
   privacy?: Partial<PrivacyConfig>;
+  collab?: Partial<CollabServerConfig>;
 };
 
 export type StandaloneServerHandle = {
   server: http.Server;
   relay: McpRelay;
+  collabRelay: CollabSignalingRelay;
   port: number;
   close: () => Promise<void>;
 };
@@ -68,36 +106,63 @@ type WsEnvelope = {
   payload?: unknown;
 };
 
-function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > MAX_HTTP_BODY_BYTES) {
-        reject(new Error("Request-Body zu groß."));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => {
-      try {
-        const text = Buffer.concat(chunks).toString("utf-8");
-        resolve(text.length > 0 ? JSON.parse(text) : {});
-      } catch (_error) {
-        reject(new Error("Request-Body ist kein gültiges JSON."));
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
+}
+
+function sendRateLimited(res: http.ServerResponse, retryAfterSeconds: number): void {
+  res.setHeader("Retry-After", String(Math.max(1, retryAfterSeconds)));
+  sendJson(res, 429, { error: "Zu viele Anfragen. Bitte kurz warten." });
+}
+
+function applyCorsHeaders(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  allowedOrigins: string[],
+): boolean {
+  const origin = req.headers.origin;
+  if (typeof origin !== "string" || origin.trim().length === 0) {
+    return true;
+  }
+
+  if (!isOriginAllowed(req, allowedOrigins, false)) {
+    return false;
+  }
+
+  res.setHeader("Access-Control-Allow-Origin", origin.trim().replace(/\/+$/, ""));
+  res.setHeader(
+    "Vary",
+    "Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Access-Control-Request-Private-Network",
+  );
+  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, Retry-After");
+  if (req.headers["access-control-request-private-network"] === "true") {
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
+  }
+  return true;
+}
+
+function handleCorsPreflight(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  allowedOrigins: string[],
+): void {
+  if (!applyCorsHeaders(req, res, allowedOrigins)) {
+    sendJson(res, 403, { error: "Origin für CORS-Preflight nicht erlaubt." });
+    return;
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-Logic-Circuit-Session, X-MCP-Session",
+  );
+  res.setHeader("Access-Control-Max-Age", "600");
+  res.statusCode = 204;
+  res.setHeader("Cache-Control", "no-store");
+  res.end();
 }
 
 function extractBearerToken(req: http.IncomingMessage): string | undefined {
@@ -163,61 +228,9 @@ function serveStaticFile(staticDir: string, pathname: string, res: http.ServerRe
   fs.createReadStream(targetPath).pipe(res);
 }
 
-async function handleMcpCall(relay: McpRelay, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  if (relay.requiresAccessKey) {
-    const token = extractBearerToken(req);
-    if (!relay.verifyAccessKey(token)) {
-      sendJson(res, 401, { error: "Ungültiger oder fehlender Bearer-Token (MCP_ACCESS_KEY)." });
-      return;
-    }
-  }
-
-  if (!req.headers["content-type"]?.startsWith("application/json")) {
-    sendJson(res, 415, { error: "Content-Type muss application/json sein." });
-    return;
-  }
-
-  let body: unknown;
-  try {
-    body = await readJsonBody(req);
-  } catch (error) {
-    sendJson(res, 400, { error: (error as Error).message });
-    return;
-  }
-
-  const parsed = (body ?? {}) as {
-    sessionId?: unknown;
-    method?: unknown;
-    params?: unknown;
-  };
-  if (typeof parsed.method !== "string" || parsed.method.length === 0) {
-    sendJson(res, 400, { error: "Feld \"method\" (String) fehlt." });
-    return;
-  }
-
-  const headerSession = req.headers["x-mcp-session"];
-  const sessionId = typeof parsed.sessionId === "string"
-    ? parsed.sessionId
-    : typeof headerSession === "string"
-      ? headerSession
-      : undefined;
-
-  try {
-    const result = await relay.call(sessionId, parsed.method, parsed.params);
-    sendJson(res, 200, { result });
-  } catch (error) {
-    let status = 422;
-    if (error instanceof MissingSessionIdError) {
-      status = 400;
-    } else if (error instanceof UnknownSessionError) {
-      status = 503;
-    }
-    sendJson(res, status, { error: (error as Error).message });
-  }
-}
-
-function rejectUpgrade(socket: Duplex, status: number, message: string): void {
-  socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\n\r\n`);
+function rejectUpgrade(socket: Duplex, status: number, message: string, extraHeaders: string[] = []): void {
+  const lines = [`HTTP/1.1 ${status} ${message}`, "Connection: close", ...extraHeaders, "", ""];
+  socket.write(lines.join("\r\n"));
   socket.destroy();
 }
 
@@ -237,34 +250,162 @@ export async function createStandaloneServer(options: StandaloneServerOptions = 
     hostingLocation: options.privacy?.hostingLocation?.trim() || envPrivacy.hostingLocation,
   };
 
+  const envCollab = readCollabConfigFromEnv();
+  const collabConfig: CollabServerConfig = {
+    stunUrls: options.collab?.stunUrls ? sanitizeStunUrls(options.collab.stunUrls) : envCollab.stunUrls,
+    accessKey: options.collab?.accessKey !== undefined ? options.collab.accessKey.trim() : envCollab.accessKey,
+    allowedOrigins: options.collab?.allowedOrigins !== undefined
+      ? options.collab.allowedOrigins.map((item) => item.trim().replace(/\/+$/, "")).filter(Boolean)
+      : envCollab.allowedOrigins,
+    inviteTtlMs: options.collab?.inviteTtlMs ?? envCollab.inviteTtlMs,
+    gracePeriodMs: options.collab?.gracePeriodMs ?? envCollab.gracePeriodMs,
+    maxSessions: options.collab?.maxSessions ?? envCollab.maxSessions,
+    maxPeersPerSession: options.collab?.maxPeersPerSession ?? envCollab.maxPeersPerSession,
+    maxMessageBytes: options.collab?.maxMessageBytes ?? envCollab.maxMessageBytes,
+  };
+  const collabAllowedOrigins = collabConfig.allowedOrigins.length > 0 ? collabConfig.allowedOrigins : allowedOrigins;
+
+  const trustProxy = options.trustProxy ?? true;
+  const rateWindowMs = options.rateLimits?.windowMs ?? DEFAULT_RATE_WINDOW_MS;
+  const httpMcpLimiter = new RateLimiter({
+    windowMs: rateWindowMs,
+    maxRequests: options.rateLimits?.httpPerMin ?? DEFAULT_RATE_LIMIT_HTTP_PER_MIN,
+  });
+  const statusLimiter = new RateLimiter({
+    windowMs: rateWindowMs,
+    maxRequests: options.rateLimits?.statusPerMin ?? DEFAULT_RATE_LIMIT_STATUS_PER_MIN,
+  });
+  const authFailLimiter = new RateLimiter({
+    windowMs: rateWindowMs,
+    maxRequests: options.rateLimits?.authFailPerMin ?? DEFAULT_RATE_LIMIT_AUTH_FAIL_PER_MIN,
+  });
+  const wsUpgradeLimiter = new RateLimiter({
+    windowMs: rateWindowMs,
+    maxRequests: options.rateLimits?.wsPerMin ?? DEFAULT_RATE_LIMIT_WS_PER_MIN,
+  });
+
   const relay = new McpRelay({
     timeoutMs: options.requestTimeoutMs ?? 60000,
     accessKey: options.accessKey,
     gracePeriodMs: options.gracePeriodMs ?? 120000,
+    maxSessions: options.maxSessions,
+    maxConcurrentCallsPerSession: options.maxConcurrentCallsPerSession,
+  });
+
+  const collabRelay = new CollabSignalingRelay({
+    accessKey: collabConfig.accessKey,
+    inviteTtlMs: collabConfig.inviteTtlMs,
+    maxSessions: collabConfig.maxSessions,
+    maxPeersPerSession: collabConfig.maxPeersPerSession,
   });
 
   const activeConnections = new Set<WebSocketConnection>();
+  const mcpHttpHandler = new McpHttpHandler({
+    requiresRemoteSession: true,
+    maxHttpSessions: options.maxHttpSessions,
+    httpSessionTtlMs: options.httpSessionTtlMs,
+    serverLabel: "Logic Circuit Web (Remote)",
+    authorizeRequest: (req) => {
+      if (!relay.requiresAccessKey) {
+        return true;
+      }
+      const ok = relay.verifyAccessKey(extractBearerToken(req));
+      if (!ok) {
+        authFailLimiter.consume(extractClientKey(req, trustProxy));
+      }
+      return ok;
+    },
+    isOriginAllowed: (req) => isOriginAllowed(req, allowedOrigins, true),
+    invokeTool: (method, params, browserSessionId) => relay.call(browserSessionId, method, params),
+  });
 
   const server = http.createServer((req, res) => {
     const pathname = (req.url ?? "/").split("?")[0];
+    const method = (req.method ?? "GET").toUpperCase();
+    const clientKey = extractClientKey(req, trustProxy);
 
-    if (pathname === "/healthz" && req.method === "GET") {
+    if (method === "OPTIONS") {
+      if (pathname === COLLAB_CONFIG_PATH) {
+        handleCorsPreflight(req, res, collabAllowedOrigins);
+        return;
+      }
+      if (pathname === MCP_STREAMABLE_HTTP_PATH || pathname === MCP_PRIVACY_PATH || pathname === `${MCP_HTTP_BASE_PATH}/status`) {
+        handleCorsPreflight(req, res, allowedOrigins);
+        return;
+      }
+      if (pathname === "/healthz") {
+        handleCorsPreflight(req, res, allowedOrigins.length > 0 ? allowedOrigins : collabAllowedOrigins);
+        return;
+      }
+    }
+
+    if (pathname === "/healthz" && method === "GET") {
+      applyCorsHeaders(req, res, allowedOrigins.length > 0 ? allowedOrigins : collabAllowedOrigins);
       sendJson(res, 200, { ok: true });
       return;
     }
 
-    if (pathname === MCP_PRIVACY_PATH && req.method === "GET") {
+    if (pathname === MCP_PRIVACY_PATH && method === "GET") {
+      if (!applyCorsHeaders(req, res, allowedOrigins)) {
+        sendJson(res, 403, { error: "Origin nicht erlaubt." });
+        return;
+      }
+      const limit = statusLimiter.consume(clientKey);
+      if (!limit.allowed) {
+        sendRateLimited(res, limit.retryAfterSeconds);
+        return;
+      }
       sendJson(res, 200, privacyConfig);
       return;
     }
 
-    if (pathname === `${MCP_HTTP_BASE_PATH}/status` && req.method === "GET") {
-      sendJson(res, 200, relay.getStatus());
+    if (pathname === COLLAB_CONFIG_PATH && method === "GET") {
+      if (!applyCorsHeaders(req, res, collabAllowedOrigins)) {
+        sendJson(res, 403, { error: "Origin nicht erlaubt." });
+        return;
+      }
+      const limit = statusLimiter.consume(clientKey);
+      if (!limit.allowed) {
+        sendRateLimited(res, limit.retryAfterSeconds);
+        return;
+      }
+      sendJson(res, 200, toPublicCollabRuntimeConfig(collabConfig, PACKAGE_VERSION));
       return;
     }
 
-    if (pathname === `${MCP_HTTP_BASE_PATH}/call` && req.method === "POST") {
-      handleMcpCall(relay, req, res).catch((error: unknown) => {
+    if (pathname === `${MCP_HTTP_BASE_PATH}/status` && method === "GET") {
+      if (!applyCorsHeaders(req, res, allowedOrigins)) {
+        sendJson(res, 403, { error: "Origin nicht erlaubt." });
+        return;
+      }
+      const limit = statusLimiter.consume(clientKey);
+      if (!limit.allowed) {
+        sendRateLimited(res, limit.retryAfterSeconds);
+        return;
+      }
+      sendJson(res, 200, {
+        ...relay.getStatus(),
+        serverVersion: PACKAGE_VERSION,
+      });
+      return;
+    }
+
+    if (pathname === MCP_STREAMABLE_HTTP_PATH) {
+      if (!applyCorsHeaders(req, res, allowedOrigins)) {
+        sendJson(res, 403, { error: "Origin für /mcp nicht erlaubt." });
+        return;
+      }
+      const authBlock = authFailLimiter.peek(clientKey);
+      if (!authBlock.allowed) {
+        sendRateLimited(res, authBlock.retryAfterSeconds);
+        return;
+      }
+      const httpLimit = httpMcpLimiter.consume(clientKey);
+      if (!httpLimit.allowed) {
+        sendRateLimited(res, httpLimit.retryAfterSeconds);
+        return;
+      }
+      mcpHttpHandler.handleHttpRequest(req, res).catch((error: unknown) => {
         sendJson(res, 500, { error: (error as Error).message });
       });
       return;
@@ -280,6 +421,30 @@ export async function createStandaloneServer(options: StandaloneServerOptions = 
 
   server.on("upgrade", (req, socket, head) => {
     const pathname = (req.url ?? "/").split("?")[0];
+    const clientKey = extractClientKey(req, trustProxy);
+
+    if (pathname === COLLAB_WS_PATH) {
+      if (!isOriginAllowed(req, collabAllowedOrigins, allowMissingOrigin)) {
+        rejectUpgrade(socket, 403, "Forbidden");
+        return;
+      }
+
+      const wsLimit = wsUpgradeLimiter.consume(clientKey);
+      if (!wsLimit.allowed) {
+        rejectUpgrade(socket, 429, "Too Many Requests", [`Retry-After: ${wsLimit.retryAfterSeconds}`]);
+        return;
+      }
+
+      const conn = WebSocketConnection.upgrade(req, socket, head, {
+        maxMessageBytes: collabConfig.maxMessageBytes,
+      });
+      if (!conn) {
+        return;
+      }
+      attachCollabWebSocket(conn, collabRelay, activeConnections);
+      return;
+    }
+
     if (pathname !== MCP_WS_PATH) {
       rejectUpgrade(socket, 404, "Not Found");
       return;
@@ -287,6 +452,12 @@ export async function createStandaloneServer(options: StandaloneServerOptions = 
 
     if (!isOriginAllowed(req, allowedOrigins, allowMissingOrigin)) {
       rejectUpgrade(socket, 403, "Forbidden");
+      return;
+    }
+
+    const wsLimit = wsUpgradeLimiter.consume(clientKey);
+    if (!wsLimit.allowed) {
+      rejectUpgrade(socket, 429, "Too Many Requests", [`Retry-After: ${wsLimit.retryAfterSeconds}`]);
       return;
     }
 
@@ -328,6 +499,11 @@ export async function createStandaloneServer(options: StandaloneServerOptions = 
 
       switch (envelope.event) {
         case MCP_EVENT_HELLO: {
+          if (!authFailLimiter.peek(clientKey).allowed) {
+            client.send(MCP_EVENT_ERROR, { error: "Zu viele fehlgeschlagene Anmeldeversuche. Bitte kurz warten." });
+            conn.close(4008, "Rate limited");
+            break;
+          }
           const payload = (envelope.payload ?? {}) as {
             sessionId?: unknown;
             reconnectToken?: unknown;
@@ -342,11 +518,17 @@ export async function createStandaloneServer(options: StandaloneServerOptions = 
             registered = true;
             clearTimeout(helloTimer);
           } catch (error) {
-            const message = error instanceof UnauthorizedRelayError
-              ? error.message
-              : "Sitzungsregistrierung fehlgeschlagen.";
-            client.send(MCP_EVENT_ERROR, { error: message });
-            conn.close(4001, "Unauthorized");
+            if (error instanceof UnauthorizedRelayError) {
+              authFailLimiter.consume(clientKey);
+              client.send(MCP_EVENT_ERROR, { error: error.message });
+              conn.close(4001, "Unauthorized");
+            } else if (error instanceof SessionLimitReachedError) {
+              client.send(MCP_EVENT_ERROR, { error: error.message });
+              conn.close(4008, "Session limit reached");
+            } else {
+              client.send(MCP_EVENT_ERROR, { error: "Sitzungsregistrierung fehlgeschlagen." });
+              conn.close(4001, "Unauthorized");
+            }
           }
           break;
         }
@@ -415,6 +597,7 @@ export async function createStandaloneServer(options: StandaloneServerOptions = 
   return {
     server,
     relay,
+    collabRelay,
     port: actualPort,
     close: async () => {
       if (heartbeatTimer) {
@@ -438,6 +621,25 @@ function parseAllowedOriginsEnv(raw: string | undefined): string[] {
   return raw.split(",").map((entry) => entry.trim()).filter(Boolean);
 }
 
+function parseOptionalIntEnv(raw: string | undefined, fallback: number, min = 0): number {
+  if (!raw || raw.trim().length === 0) {
+    return fallback;
+  }
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.floor(parsed));
+}
+
+function parseTrustProxyEnv(raw: string | undefined): boolean {
+  if (!raw) {
+    return true;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized !== "0" && normalized !== "false";
+}
+
 const isDirectEntry = typeof process.argv[1] === "string" &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
@@ -452,10 +654,24 @@ if (isDirectEntry) {
     requestTimeoutMs: Number(process.env.MCP_REQUEST_TIMEOUT_MS ?? 600000),
     gracePeriodMs: Number(process.env.MCP_SESSION_GRACE_MS ?? 120000),
     heartbeatIntervalMs: Number(process.env.MCP_HEARTBEAT_INTERVAL_MS ?? 25000),
+    maxSessions: parseOptionalIntEnv(process.env.MCP_MAX_SESSIONS, 20, 1),
+    maxHttpSessions: parseOptionalIntEnv(process.env.MCP_MAX_HTTP_SESSIONS, 50, 1),
+    httpSessionTtlMs: parseOptionalIntEnv(process.env.MCP_HTTP_SESSION_TTL_MS, 1800000, 1000),
+    maxConcurrentCallsPerSession: parseOptionalIntEnv(process.env.MCP_MAX_CONCURRENT_CALLS_PER_SESSION, 4, 1),
+    trustProxy: parseTrustProxyEnv(process.env.MCP_TRUST_PROXY),
+    rateLimits: {
+      httpPerMin: parseOptionalIntEnv(process.env.RATE_LIMIT_HTTP_PER_MIN, DEFAULT_RATE_LIMIT_HTTP_PER_MIN, 0),
+      statusPerMin: parseOptionalIntEnv(process.env.RATE_LIMIT_STATUS_PER_MIN, DEFAULT_RATE_LIMIT_STATUS_PER_MIN, 0),
+      authFailPerMin: parseOptionalIntEnv(process.env.RATE_LIMIT_AUTH_FAIL_PER_MIN, DEFAULT_RATE_LIMIT_AUTH_FAIL_PER_MIN, 0),
+      wsPerMin: parseOptionalIntEnv(process.env.RATE_LIMIT_WS_PER_MIN, DEFAULT_RATE_LIMIT_WS_PER_MIN, 0),
+    },
     staticDir: process.env.MCP_STATIC_DIR,
+    collab: readCollabConfigFromEnv(),
   })
     .then((handle) => {
-      console.log(`[logic-circuit-mcp-relay] Aktiv auf http://${host}:${handle.port} (WS: ${MCP_WS_PATH})`);
+      console.log(
+        `[logic-circuit-relay] Aktiv auf http://${host}:${handle.port} (MCP HTTP: ${MCP_STREAMABLE_HTTP_PATH}, MCP WS: ${MCP_WS_PATH}, Collab WS: ${COLLAB_WS_PATH})`,
+      );
       const shutdown = () => {
         void handle.close().then(() => process.exit(0));
       };

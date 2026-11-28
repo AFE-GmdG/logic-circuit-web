@@ -1,6 +1,6 @@
 import React from "react";
 
-import CircuitContext from ".";
+import CircuitContext, { type CircuitCollabSyncBridge, type CircuitProjectSnapshot } from ".";
 
 import type FloatingPasteState from "../../types/canvas/floatingPasteState";
 import type GridPoint from "../../types/canvas/gridPoint";
@@ -42,7 +42,9 @@ import type CircuitDelta from "../../types/history/circuitDelta";
 import type HistoryState from "../../types/history/historyState";
 import type PropertyChange from "../../types/history/propertyChange";
 import type AppSettings from "../../types/settings/appSettings";
+import type { NativeLogicalCircuit } from "../../types/storage/nativeProjectFormat";
 
+import { encodeSymbolToNative } from "../../collab/collabModelCodec";
 import { applyLanguagePreference } from "../../i18n";
 import {
   applyDefaultFrequencyToProject,
@@ -80,11 +82,13 @@ import {
 } from "../../utils/circuitLayout";
 import { GRID_SIZE } from "../../utils/coordinateSystem";
 import { formatDocumentTitle } from "../../utils/documentTitle";
+import { generateEntityUuid } from "../../utils/entityId";
 import {
   type FileSystemFileHandleLike,
   loadLastProjectFromStorage,
 } from "../../utils/fileSystemStorage";
 import { buildFloatingMovePointMigration } from "../../utils/floatingPasteUtils";
+import { transferLibraryCircuitToProject } from "../../utils/libraryCircuitTransfer";
 import {
   areByteArraysEqual,
   clampAddressBitWidth,
@@ -93,7 +97,10 @@ import {
   encodeMemoryData,
   reallocateMemoryData,
 } from "../../utils/memoryDataUtils";
-import { buildNativeProjectFileName } from "../../utils/storage/nativeProjectWriter";
+import {
+  buildNativeProjectFileName,
+  serializeLogicalCircuitToNative,
+} from "../../utils/storage/nativeProjectWriter";
 import { parseProjectFileText } from "../../utils/storage/projectFileUtils";
 import {
   loadCleanUpVisualizationEnabled,
@@ -399,8 +406,51 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
   const currentCircuitIdRef = React.useRef<string>(currentCircuitId);
   currentCircuitIdRef.current = currentCircuitId;
 
+  const collabSyncBridgeRef = React.useRef<CircuitCollabSyncBridge | null>(null);
+  const collabUndoUnsubRef = React.useRef<(() => void) | null>(null);
+  const [, setCollabHistoryVersion] = React.useState(0);
+
+  React.useEffect(
+    () => () => {
+      collabUndoUnsubRef.current?.();
+      collabUndoUnsubRef.current = null;
+    },
+    [],
+  );
+
+  const registerCollabSyncBridge = React.useCallback(
+    (bridge: CircuitCollabSyncBridge | null) => {
+      collabUndoUnsubRef.current?.();
+      collabUndoUnsubRef.current = null;
+      collabSyncBridgeRef.current = bridge;
+      if (bridge?.subscribeUndoState) {
+        collabUndoUnsubRef.current = bridge.subscribeUndoState(() => {
+          setCollabHistoryVersion((version) => version + 1);
+        });
+      }
+      setCollabHistoryVersion((version) => version + 1);
+    },
+    [],
+  );
+
+  const canMutate = React.useCallback(
+    (): boolean => collabSyncBridgeRef.current?.canMutateProject() ?? true,
+    [],
+  );
+
   const recordDelta = React.useCallback(
-    (delta: CircuitDelta) => {
+    (
+      delta: CircuitDelta,
+      options?: { skipCollabSync?: boolean; importedSubCircuits?: readonly LogicalCircuit[] },
+    ) => {
+      const bridge = collabSyncBridgeRef.current;
+      if (!options?.skipCollabSync && bridge?.isCollabUndoActive?.()) {
+        bridge.onLocalDeltaCommitted(delta, projectRef.current, {
+          importedSubCircuits: options?.importedSubCircuits,
+        });
+        return;
+      }
+
       const targetCircuitId = delta.logicalCircuitId || currentCircuitIdRef.current;
       setHistoriesByCircuit((prev) => ({
         ...prev,
@@ -409,6 +459,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           delta,
         ),
       }));
+      if (!options?.skipCollabSync) {
+        bridge?.onLocalDeltaCommitted(delta, projectRef.current, {
+          importedSubCircuits: options?.importedSubCircuits,
+        });
+      }
     },
     [setHistoriesByCircuit],
   );
@@ -416,6 +471,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
   const clearHistory = React.useCallback(
     () => {
       const targetCircuitId = currentCircuitIdRef.current;
+      const bridge = collabSyncBridgeRef.current;
+      if (bridge?.isCollabUndoActive?.()) {
+        bridge.clearCollabHistory?.(targetCircuitId);
+        return;
+      }
       setHistoriesByCircuit((prev) => ({
         ...prev,
         [targetCircuitId]: createEmptyHistoryState(),
@@ -684,6 +744,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
   // Fügt beliebig viele Symbole, Textnotizen und Leitungen atomar als einzelnes Undo-Delta hinzu
   const addEntities = React.useCallback(
     (params: AddEntitiesParams): AddEntitiesResult => {
+      if (!canMutate()) {
+        return { symbols: [], textNotes: [], wires: [] };
+      }
       const currentProj = projectRef.current;
       const targetCircuit = currentProj.logicalCircuits.find(
         (lc) => lc.logicalCircuitId === currentCircuitIdRef.current,
@@ -768,6 +831,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       };
     },
     [
+      canMutate,
       cloneSandboxProject,
       recordDelta,
       setProject,
@@ -777,6 +841,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
   // Übernimmt einen vorbereiteten Paste-Payload (inkl. fehlender Subschaltungen) als einzelnen Undo-Schritt
   const commitPastePayload = React.useCallback(
     (payload: PreparedPastePayload): AddEntitiesResult => {
+      if (!canMutate()) {
+        return { symbols: [], textNotes: [], wires: [] };
+      }
       const targetCircuitId = payload.targetCircuitId || currentCircuitIdRef.current;
       const targetCircuit = projectRef.current.logicalCircuits.find(
         (lc) => lc.logicalCircuitId === targetCircuitId,
@@ -806,6 +873,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         textNotes: payload.textNotes,
         wires: uniqueWires.length > 0 ? uniqueWires : undefined,
       };
+
+      const existingProjLcIds = new Set(projectRef.current.logicalCircuits.map((lc) => lc.logicalCircuitId));
+      const addedSubCircuits = payload.importedSubCircuits.filter(
+        (lc) => !existingProjLcIds.has(lc.logicalCircuitId),
+      );
 
       setProject((prevProject) => {
         let base = prevProject;
@@ -858,7 +930,10 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         return applyDeltaForward(base, delta);
       });
 
-      recordDelta(delta);
+      recordDelta(
+        delta,
+        addedSubCircuits.length > 0 ? { importedSubCircuits: addedSubCircuits } : undefined,
+      );
 
       const pastedSymbolIds = payload.symbols.map((s) => s.symbol.circuitSymbolId);
       const pastedNoteIds = payload.textNotes.map((n) => n.textNoteId);
@@ -880,6 +955,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       };
     },
     [
+      canMutate,
       recordDelta,
       selectEntities,
       setProject,
@@ -920,6 +996,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
   // Teilt eine bestehende Leitung am angegebenen Rasterpunkt in zwei Segmente (analog zu EditorDiagram.Split)
   const splitWire = React.useCallback(
     (wireId: string, splitPoint: GridPoint): [Wire, Wire] | null => {
+      if (!canMutate()) {
+        return null;
+      }
       const currentProj = projectRef.current;
       const targetCircuit = currentProj.logicalCircuits.find(
         (lc) => lc.logicalCircuitId === currentCircuitIdRef.current,
@@ -967,13 +1046,17 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
       return [updatedWire, wire2];
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   // Verschmilzt zwei aneinandergrenzende Leitungen am gemeinsamen Endpunkt (analog zu EditorDiagram.Merge)
   const mergeWires = React.useCallback(
     (wireId1: string, wireId2: string): Wire | null => {
-      if (wireId1 === wireId2) {
+      if (!canMutate() || wireId1 === wireId2) {
         return null;
       }
 
@@ -1040,7 +1123,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
       return mergedWire;
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   // Aktualisiert Leitungs-Koordinaten live während einer Drag-Bewegung ohne History-Eintrag
@@ -1049,7 +1136,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       updates: { wireId: string; x1: number; y1: number; x2: number; y2: number }[],
       removedWireIds: string[] = [],
     ) => {
-      if (updates.length === 0 && removedWireIds.length === 0) {
+      if (!canMutate() || (updates.length === 0 && removedWireIds.length === 0)) {
         return;
       }
       const updateMap = new Map(updates.map((u) => [u.wireId, u]));
@@ -1077,7 +1164,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         });
       });
     },
-    [setProject],
+    [canMutate, setProject],
   );
 
   const updateTextNote = React.useCallback(
@@ -1086,6 +1173,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       updates: Partial<TextNote>,
       options?: { recordHistory?: boolean },
     ) => {
+      if (!canMutate()) {
+        return;
+      }
       const currentProj = projectRef.current;
       const existingNote = currentProj.textNotes.find((n) => n.textNoteId === textNoteId);
       if (!existingNote) {
@@ -1143,7 +1233,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         });
       }
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   const updateCircuitSymbolProperties = React.useCallback(
@@ -1152,6 +1246,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       updates: CircuitSymbolPropertiesUpdate,
       options?: { x?: number; y?: number; withWires?: boolean },
     ): CircuitSymbol | null => {
+      if (!canMutate()) {
+        return null;
+      }
       const currentProject = projectRef.current;
       const symbol =
         currentProject.circuitSymbols.find((s) => s.circuitSymbolId === symbolId) ??
@@ -1528,13 +1625,17 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
       return updatedSymbol;
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   // Schreibt geänderte persistente RAM-Daten aus der Simulation ohne Undo-Eintrag ins Projektmodell zurück
   const commitSimulatedMemoryData = React.useCallback(
     (updates: ReadonlyArray<{ memoryId: string; data: string }>): boolean => {
-      if (updates.length === 0) {
+      if (!canMutate() || updates.length === 0) {
         return false;
       }
 
@@ -1626,13 +1727,21 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         true,
       );
 
+      collabSyncBridgeRef.current?.onLocalMutation({
+        type: "updateMemoryData",
+        updates: Array.from(changedByMemoryId.entries(), ([memoryId, data]) => ({ memoryId, data })),
+      });
+
       return true;
     },
-    [applyProjectChange],
+    [applyProjectChange, canMutate],
   );
 
   const updateCircuitProperties = React.useCallback(
     (circuitId: string, updates: CircuitPropertiesUpdate): LogicalCircuit | null => {
+      if (!canMutate()) {
+        return null;
+      }
       const currentProject = projectRef.current;
       const targetIndex = currentProject.logicalCircuits.findIndex(
         (lc) => lc.logicalCircuitId === circuitId,
@@ -1647,10 +1756,10 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
       let finalNotation: string;
       if (updates.notation !== undefined) {
-        finalNotation = updates.notation.trim() || finalName;
+        finalNotation = updates.notation.trim();
       } else if (
         updates.name !== undefined &&
-        (!currentLc.notation || currentLc.notation === currentLc.name)
+        currentLc.notation === currentLc.name
       ) {
         finalNotation = finalName;
       } else {
@@ -1793,11 +1902,17 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
       if (Object.keys(changes).length > 0) {
         recordDelta(delta);
+      } else if (hasValidatorsChange) {
+        collabSyncBridgeRef.current?.onLocalDeltaCommitted(delta, projectRef.current);
       }
 
       return updatedLc;
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   // Größenänderung eines platzierbaren Bausteins (Button, Constant, Probe, Pin, LedMatrix) am Raster
@@ -1807,6 +1922,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       params: { x: number; y: number; width: number; height: number },
       options?: { recordHistory?: boolean; withWires?: boolean },
     ): CircuitSymbol | null => {
+      if (!canMutate()) {
+        return null;
+      }
       const currentProject = projectRef.current;
       const symbol =
         currentProject.circuitSymbols.find((s) => s.circuitSymbolId === symbolId) ??
@@ -1974,7 +2092,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
       return updatedSymbol;
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   const moveSymbols = React.useCallback(
@@ -1982,7 +2104,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       moves: { symbolId: string; gridPoint: GridPoint }[],
       options?: { recordHistory?: boolean; withWires?: boolean },
     ) => {
-      if (moves.length === 0) {
+      if (!canMutate() || moves.length === 0) {
         return;
       }
 
@@ -2096,7 +2218,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         });
       }
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   const moveSymbol = React.useCallback(
@@ -2115,7 +2241,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       moves: { textNoteId: string; gridPoint: GridPoint }[],
       options?: { recordHistory?: boolean },
     ) => {
-      if (moves.length === 0) {
+      if (!canMutate() || moves.length === 0) {
         return;
       }
 
@@ -2175,12 +2301,19 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         });
       }
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   // Verschiebt Symbole, Textnotizen und Leitungen gemeinsam um (dx, dy) als einzelnes Undo-Delta
   const moveEntities = React.useCallback(
     (params: MoveEntitiesParams): MoveEntitiesResult => {
+      if (!canMutate()) {
+        return { symbols: [], textNotes: [], wires: [], removedWireIds: [] };
+      }
       const { dx, dy } = params;
       const symIdSet = new Set(params.symbolIds ?? []);
       const noteIdSet = new Set(params.textNoteIds ?? []);
@@ -2309,7 +2442,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         removedWireIds: removedWires.map((w) => w.wireId),
       };
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   const rotateSymbols = React.useCallback(
@@ -2319,6 +2456,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       textNoteIds: string[] = [],
       options?: { withWires?: boolean; wireIds?: string[] },
     ) => {
+      if (!canMutate()) {
+        return;
+      }
       const targetWireIds = options?.wireIds ?? [];
       if (symbolIds.length === 0 && textNoteIds.length === 0 && targetWireIds.length === 0) {
         return;
@@ -2455,7 +2595,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         setSelectedWireIds((prev) => prev.filter((id) => !removedSet.has(id)));
       }
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   const rotateSelectedSymbols = React.useCallback(
@@ -2478,7 +2622,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
   const commitFloatingMove = React.useCallback(
     (floatingState: FloatingPasteState) => {
-      if (floatingState.mode !== "move" || !floatingState.moveMeta) {
+      if (!canMutate() || floatingState.mode !== "move" || !floatingState.moveMeta) {
         return;
       }
       const { moveMeta, payload } = floatingState;
@@ -2659,6 +2803,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       }
     },
     [
+      canMutate,
       moveEntities,
       recordDelta,
       setProject,
@@ -2667,7 +2812,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
   const removeEntities = React.useCallback(
     (symbolIds: string[], textNoteIds: string[], wireIds: string[] = []) => {
-      if (symbolIds.length === 0 && textNoteIds.length === 0 && wireIds.length === 0) {
+      if (!canMutate() || (symbolIds.length === 0 && textNoteIds.length === 0 && wireIds.length === 0)) {
         return;
       }
       const symSet = new Set(symbolIds);
@@ -2719,7 +2864,11 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         setSelectedWireIds((prev) => prev.filter((id) => !wireSet.has(id)));
       }
     },
-    [recordDelta, setProject],
+    [
+      canMutate,
+      recordDelta,
+      setProject,
+    ],
   );
 
   const removeSymbols = React.useCallback(
@@ -2756,6 +2905,14 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
 
   const undo = React.useCallback(
     () => {
+      const bridge = collabSyncBridgeRef.current;
+      if (bridge?.isCollabUndoActive?.()) {
+        bridge.performCollabUndo?.(currentCircuitIdRef.current);
+        return;
+      }
+      if (!canMutate()) {
+        return;
+      }
       const targetCircuitId = currentCircuitIdRef.current;
       const currentHist = historiesByCircuitRef.current[targetCircuitId] ?? createEmptyHistoryState();
       if (currentHist.pointer <= 0) {
@@ -2785,11 +2942,23 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         setSelectedWireIds((prev) => prev.filter((id) => !addedWireIds.has(id)));
       }
     },
-    [setHistoriesByCircuit, setProject],
+    [
+      canMutate,
+      setHistoriesByCircuit,
+      setProject,
+    ],
   );
 
   const redo = React.useCallback(
     () => {
+      const bridge = collabSyncBridgeRef.current;
+      if (bridge?.isCollabUndoActive?.()) {
+        bridge.performCollabRedo?.(currentCircuitIdRef.current);
+        return;
+      }
+      if (!canMutate()) {
+        return;
+      }
       const targetCircuitId = currentCircuitIdRef.current;
       const currentHist = historiesByCircuitRef.current[targetCircuitId] ?? createEmptyHistoryState();
       if (currentHist.pointer >= currentHist.entries.length) {
@@ -2819,11 +2988,18 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         setSelectedWireIds((prev) => prev.filter((id) => !removedWireIds.has(id)));
       }
     },
-    [setHistoriesByCircuit, setProject],
+    [
+      canMutate,
+      setHistoriesByCircuit,
+      setProject,
+    ],
   );
 
   const createCircuits = React.useCallback(
     (inputs: CreateCircuitInput[]): LogicalCircuit[] => {
+      if (!canMutate()) {
+        return [];
+      }
       if (inputs.length === 0) {
         throw new Error("Mindestens eine zu erstellende Schaltung muss angegeben werden.");
       }
@@ -2837,16 +3013,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         if (!trimmedName) {
           throw new Error("Der Name einer neuen Schaltung darf nicht leer sein.");
         }
-        const slug = trimmedName
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-        const baseId = slug ? `lc-${slug}` : "lc-circuit";
-        let candidateId = baseId;
-        let suffix = 2;
+        let candidateId = generateEntityUuid();
         while (existingIds.has(candidateId)) {
-          candidateId = `${baseId}-${suffix}`;
-          suffix += 1;
+          candidateId = generateEntityUuid();
         }
         existingIds.add(candidateId);
 
@@ -2856,7 +3025,7 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           input.category?.trim() ?? "",
           input.note ?? "",
         );
-        if (input.notation !== undefined && input.notation.trim() !== "") {
+        if (input.notation !== undefined) {
           created.notation = input.notation.trim();
         }
         if (input.circuitShape !== undefined && input.circuitShape !== "display") {
@@ -2886,13 +3055,25 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         };
       });
 
+      const latestProj = projectRef.current;
+      collabSyncBridgeRef.current?.onLocalMutation({
+        type: "createCircuits",
+        circuits: createdCircuits.map((lc) => serializeLogicalCircuitToNative(lc, latestProj)),
+      });
+
       return createdCircuits;
     },
-    [setProject],
+    [canMutate, setProject],
   );
 
   const deleteCircuits = React.useCallback(
     (circuitIds: string[]): DeleteCircuitsResult => {
+      if (!canMutate()) {
+        return {
+          deletedCircuitIds: [],
+          currentCircuitId: currentCircuitIdRef.current,
+        };
+      }
       const targetIds = Array.from(new Set(circuitIds));
       if (targetIds.length === 0) {
         throw new Error("Mindestens eine Schaltungs-ID muss angegeben werden.");
@@ -2976,14 +3157,127 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         setCurrentCircuitId(nextCurrentCircuitId);
       }
 
+      collabSyncBridgeRef.current?.onLocalMutation({
+        type: "deleteCircuits",
+        circuitIds: targetIds,
+      });
+
       return {
         deletedCircuitIds: targetIds,
         currentCircuitId: nextCurrentCircuitId,
       };
     },
     [
+      canMutate,
       setCurrentCircuitId,
       setHistoriesByCircuit,
+      setProject,
+    ],
+  );
+
+  // Übernimmt eine Bibliotheksschaltung (samt Sub-Schaltungen mit Hash-Abgleich) als Kopie ins Projekt
+  const importLibraryCircuit = React.useCallback(
+    (
+      libraryCircuits: readonly NativeLogicalCircuit[],
+      rootCircuitId: string,
+      options?: {
+        targetCircuitId?: string;
+        gridPoint?: GridPoint;
+        deduplicateRoot?: boolean;
+      },
+    ) => {
+      if (!canMutate()) {
+        return {
+          rootCircuitId,
+          addedCircuitIds: [],
+          reusedCircuitIds: [],
+        };
+      }
+      const currentProj = projectRef.current;
+      const targetCircuitId = options?.targetCircuitId ?? currentCircuitIdRef.current;
+      const transfer = transferLibraryCircuitToProject(
+        currentProj,
+        libraryCircuits,
+        rootCircuitId,
+        {
+          targetParentCircuitId: options?.gridPoint ? targetCircuitId : undefined,
+          deduplicateRoot: options?.deduplicateRoot,
+        },
+      );
+
+      let placedSymbol: CircuitSymbol | undefined;
+      if (options?.gridPoint) {
+        const targetCircuit = transfer.project.logicalCircuits.find(
+          (lc) => lc.logicalCircuitId === targetCircuitId,
+        );
+        const importedSubLc = transfer.project.logicalCircuits.find(
+          (lc) => lc.logicalCircuitId === transfer.rootCircuitId,
+        );
+
+        if (!targetCircuit || !importedSubLc) {
+          throw new Error(`Zielschaltung "${targetCircuitId}" oder importierte Schaltung wurde nicht gefunden.`);
+        }
+
+        const sandbox = cloneSandboxProject(transfer.project);
+        const { circuitSymbol, circuit } = instantiateCircuitFromPalette(
+          sandbox,
+          targetCircuitId,
+          {
+            type: "subCircuit",
+            subCircuitId: importedSubLc.logicalCircuitId,
+            name: importedSubLc.name,
+          },
+          options.gridPoint,
+        );
+
+        const delta: CircuitDelta = {
+          type: "add",
+          logicalCircuitId: targetCircuitId,
+          symbols: [{ symbol: circuitSymbol, circuit }],
+          textNotes: [],
+        };
+
+        setProject(applyDeltaForward(transfer.project, delta));
+        recordDelta(delta, { skipCollabSync: true });
+        setSelectedSymbolIds([circuitSymbol.circuitSymbolId]);
+        setSelectedTextNoteIds([]);
+        setSelectedWireIds([]);
+        placedSymbol = circuitSymbol;
+      } else if (transfer.addedCircuits.length > 0) {
+        setProject(transfer.project);
+      }
+
+      const serializedAdded = transfer.addedCircuits.map((lc) =>
+        serializeLogicalCircuitToNative(lc, transfer.project),
+      );
+      if (placedSymbol) {
+        const encoded = encodeSymbolToNative(placedSymbol, projectRef.current);
+        if (encoded.element) {
+          collabSyncBridgeRef.current?.onLocalMutation({
+            type: "importLibraryCircuit",
+            addedCircuits: serializedAdded,
+            targetCircuitId,
+            placedElement: encoded.element,
+          });
+        }
+      } else if (serializedAdded.length > 0) {
+        collabSyncBridgeRef.current?.onLocalMutation({
+          type: "importLibraryCircuit",
+          addedCircuits: serializedAdded,
+        });
+      }
+
+      return {
+        rootCircuitId: transfer.rootCircuitId,
+        addedCircuitIds: transfer.addedCircuits.map((lc) => lc.logicalCircuitId),
+        reusedCircuitIds: transfer.reusedCircuitIds,
+        placedSymbol,
+      };
+    },
+    [
+      canMutate,
+      cloneSandboxProject,
+      recordDelta,
       setProject,
     ],
   );
@@ -2999,6 +3293,9 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
   // Globale Projekteinstellungen (ohne schaltungsbezogenen Undo-Eintrag) aktualisieren
   const updateProjectProperties = React.useCallback(
     (updates: ProjectPropertiesUpdate) => {
+      if (!canMutate()) {
+        return;
+      }
       const currentMeta = projectRef.current.project;
       const nextName = updates.name !== undefined ? (updates.name.trim() || currentMeta.name) : currentMeta.name;
       const nextNote = updates.note !== undefined ? updates.note : currentMeta.note;
@@ -3029,14 +3326,18 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         }),
         true,
       );
+      collabSyncBridgeRef.current?.onLocalMutation({
+        type: "updateProjectProperties",
+        updates,
+      });
     },
-    [applyProjectChange],
+    [applyProjectChange, canMutate],
   );
 
   const loadProject = React.useCallback(
     (
       nextProject: CircuitProject,
-      fileMeta?: { handle?: FileSystemFileHandleLike | null; fileName?: string | null },
+      fileMeta?: { handle?: FileSystemFileHandleLike | null; fileName?: string | null; suppressCollabSync?: boolean },
     ) => {
       hasUserProjectActionRef.current = true;
       applyProjectChange(nextProject, false);
@@ -3048,12 +3349,93 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
       setSelectedWireIds([]);
       setActiveFileHandle(fileMeta?.handle ?? null, fileMeta?.fileName ?? null);
       setHasUnsavedChanges(false);
+      if (!fileMeta?.suppressCollabSync) {
+        collabSyncBridgeRef.current?.onLocalProjectReplaced(nextProject);
+      }
     },
     [
       applyProjectChange,
       setActiveFileHandle,
       setCurrentCircuitId,
       setHasUnsavedChanges,
+      setHistoriesByCircuit,
+      setSelectedSymbolIds,
+      setSelectedTextNoteIds,
+      setSelectedWireIds,
+    ],
+  );
+
+  const captureProjectSnapshot = React.useCallback(
+    (): CircuitProjectSnapshot => ({
+      project: projectRef.current,
+      currentCircuitId: currentCircuitIdRef.current,
+      historiesByCircuit: { ...historiesByCircuitRef.current },
+      hasUnsavedChanges: hasUnsavedChangesRef.current,
+      activeFileHandle: activeFileHandleRef.current,
+      activeFileName: activeFileNameRef.current,
+    }),
+    [],
+  );
+
+  const restoreProjectSnapshot = React.useCallback(
+    (snapshot: CircuitProjectSnapshot, options?: { suppressCollabSync?: boolean }) => {
+      hasUserProjectActionRef.current = true;
+      applyProjectChange(snapshot.project, false);
+      setHistoriesByCircuit(snapshot.historiesByCircuit);
+      setCurrentCircuitId(snapshot.currentCircuitId);
+      setSelectedSymbolIds([]);
+      setSelectedTextNoteIds([]);
+      setSelectedWireIds([]);
+      setActiveFileHandle(snapshot.activeFileHandle, snapshot.activeFileName);
+      setHasUnsavedChanges(snapshot.hasUnsavedChanges);
+      if (!options?.suppressCollabSync) {
+        collabSyncBridgeRef.current?.onLocalProjectReplaced(snapshot.project);
+      }
+    },
+    [
+      applyProjectChange,
+      setActiveFileHandle,
+      setCurrentCircuitId,
+      setHasUnsavedChanges,
+      setHistoriesByCircuit,
+      setSelectedSymbolIds,
+      setSelectedTextNoteIds,
+      setSelectedWireIds,
+    ],
+  );
+
+  const applyRemoteProjectState = React.useCallback(
+    (
+      nextProject: CircuitProject,
+      options?: { resetHistory?: boolean; preserveSelection?: boolean },
+    ) => {
+      applyProjectChange(nextProject, false);
+      if (options?.resetHistory) {
+        setHistoriesByCircuit({});
+      }
+      const stillHasCurrent = nextProject.logicalCircuits.some(
+        (lc) => lc.logicalCircuitId === currentCircuitIdRef.current,
+      );
+      if (!stillHasCurrent) {
+        const fallbackId = nextProject.project.logicalCircuitId || nextProject.logicalCircuits[0]?.logicalCircuitId || "";
+        currentCircuitIdRef.current = fallbackId;
+        setCurrentCircuitIdState(fallbackId);
+      }
+      if (!options?.preserveSelection) {
+        setSelectedSymbolIds([]);
+        setSelectedTextNoteIds([]);
+        setSelectedWireIds([]);
+      } else {
+        const validSymbolIds = new Set(nextProject.circuitSymbols.map((s) => s.circuitSymbolId));
+        const validNoteIds = new Set(nextProject.textNotes.map((n) => n.textNoteId));
+        const validWireIds = new Set(nextProject.wires.map((w) => w.wireId));
+        setSelectedSymbolIds((prev) => prev.filter((id) => validSymbolIds.has(id)));
+        setSelectedTextNoteIds((prev) => prev.filter((id) => validNoteIds.has(id)));
+        setSelectedWireIds((prev) => prev.filter((id) => validWireIds.has(id)));
+      }
+    },
+    [
+      applyProjectChange,
       setHistoriesByCircuit,
       setSelectedSymbolIds,
       setSelectedTextNoteIds,
@@ -3206,6 +3588,10 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           const cid = currentCircuitIdRef.current ?? currentCircuitId;
           const lc = p.logicalCircuits.find((c) => c.logicalCircuitId === cid) ?? p.logicalCircuits[0];
           const targetId = lc?.logicalCircuitId ?? cid;
+          const bridge = collabSyncBridgeRef.current;
+          if (bridge?.isCollabUndoActive?.() && bridge.getCollabHistory) {
+            return bridge.getCollabHistory(targetId);
+          }
           const map = historiesByCircuitRef.current ?? historiesByCircuit;
           return map[targetId] ?? createEmptyHistoryState();
         },
@@ -3214,6 +3600,10 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           const cid = currentCircuitIdRef.current ?? currentCircuitId;
           const lc = p.logicalCircuits.find((c) => c.logicalCircuitId === cid) ?? p.logicalCircuits[0];
           const targetId = lc?.logicalCircuitId ?? cid;
+          const bridge = collabSyncBridgeRef.current;
+          if (bridge?.isCollabUndoActive?.() && bridge.canCollabUndo) {
+            return bridge.canCollabUndo(targetId);
+          }
           const map = historiesByCircuitRef.current ?? historiesByCircuit;
           const h = map[targetId] ?? createEmptyHistoryState();
           return h.pointer > 0 && canUndo !== undefined;
@@ -3223,6 +3613,10 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
           const cid = currentCircuitIdRef.current ?? currentCircuitId;
           const lc = p.logicalCircuits.find((c) => c.logicalCircuitId === cid) ?? p.logicalCircuits[0];
           const targetId = lc?.logicalCircuitId ?? cid;
+          const bridge = collabSyncBridgeRef.current;
+          if (bridge?.isCollabUndoActive?.() && bridge.canCollabRedo) {
+            return bridge.canCollabRedo(targetId);
+          }
           const map = historiesByCircuitRef.current ?? historiesByCircuit;
           const h = map[targetId] ?? createEmptyHistoryState();
           return h.pointer < h.entries.length && canRedo !== undefined;
@@ -3234,9 +3628,14 @@ const CircuitContextProvider: React.FC<CircuitContextProviderProps> = ({
         setCurrentCircuitId,
         createCircuits,
         deleteCircuits,
+        importLibraryCircuit,
         activePaletteDrag,
         setActivePaletteDrag,
         loadProject,
+        captureProjectSnapshot,
+        restoreProjectSnapshot,
+        registerCollabSyncBridge,
+        applyRemoteProjectState,
         importProjectFromText,
         importProjectFromXml,
         resetToDemoProject,

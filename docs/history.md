@@ -2,7 +2,28 @@
 
 [← Zurück zur Übersicht](intro.md) • [📋 Zum Scrum-Board](scrum-board.md)
 
-Dieses Dokument fasst die abgeschlossenen User Stories, technischen Arbeitspakete und behobenen Fehlerberichte der Haupt- und Feature-Releases von **Logic Circuit Web** thematisch zusammen (`Release 1.1.0` sowie `Release 1.0.0`). Die ursprünglichen Einzeldateien der ersten Produktversion wurden im Rahmen von `US-023` (`T-064`) zugunsten einer kompakten, kontextschonenden Projektdokumentation konsolidiert.
+Dieses Dokument fasst die abgeschlossenen User Stories, technischen Arbeitspakete und behobenen Fehlerberichte der Haupt- und Feature-Releases von **Logic Circuit Web** thematisch zusammen (`Release 1.2.0`, `Release 1.1.0` sowie `Release 1.0.0`). Die ursprünglichen Einzeldateien der ersten Produktversion wurden im Rahmen von `US-023` (`T-064`) zugunsten einer kompakten, kontextschonenden Projektdokumentation konsolidiert.
+
+---
+
+## Release 1.2.0 – Schaltungs-Bibliothek, Streamable-HTTP-MCP & WebRTC-Kollaboration
+
+Im Minor-Release **1.2.0** wurde Logic Circuit Web um eine lokale Schaltungs-Bibliothek mit Standard-ICs, den auf Streamable HTTP und Self-Hosting umgestellten Remote-MCP-Sidecar sowie eine vollständige WebRTC-basierte Echtzeit-Kollaboration erweitert (`US-017`, `US-028` bis `US-032`, `US-034` inklusive `T-080` bis `T-108` sowie Bugfixes `B-005` bis `B-008`):
+
+- **Schaltungs-Bibliothek & Standard-ICs (`US-017` / `T-080` bis `T-084`):**
+  - Persistente Benutzer-Bibliothek über die File System Access API inklusive Read-Only-Reload-Cache, Standard-ICs mit optimiertem Leitungs-Layout, umschaltbarer Seitenleiste (`Projekt` ↔ `Bibliothek`), Subschaltungs-Extraktion mit Kopie-/Hash-Abgleich sowie farblich gekennzeichnetem Bibliotheks-Bearbeitungsmodus.
+- **Streamable-HTTP-MCP, Sidecar-Schutz & Self-Hosting (`US-034` / `T-089` bis `T-093`):**
+  - Vollständige Ablösung von `mcpCli.mjs` durch Streamable HTTP (`/mcp`), Auth-First- und Rate-Limiting-Schutz für MCP/Collab, Custom-Sidecar-Opt-in (inklusive GitHub Pages via Sidecar-CORS) sowie herunterladbares Sidecar-ZIP-Paket im Hauptmenü mit automatischem Versionsabgleich.
+- **WebRTC-Signaling, P2P-Transport & Kollaborations-Sessions (`US-028`, `US-029` / `T-085` bis `T-088`, `T-094` bis `T-097`):**
+  - Flüchtiges In-Memory-Signaling-Relay mit 5-Minuten-Hash-Einladungslinks (*Gast*/*Kollaborateur*) ohne Lobby oder Chat, STUN-Verbindungsaufbau mit Diagnose- und Resync-UI, DataChannel-Chunking mit Backpressure, Pflicht-Anzeigename, Namensmoderation/-sperre, „Hand heben“, hostseitiger Autorisierung und geschütztem Host-Handover (auch an Gäste) inklusive DSGVO-Hinweis.
+- **Echtzeit-Synchronisation, Soft-Locking & benutzerbezogenes Undo/Redo (`US-030` / `T-098` bis `T-101`):**
+  - Host-autoritative Revisions-Engine mit 200er-Ringpuffer-Catch-up, Optimistic UI mit Rollback, Quiesce-Handover und Projekt-Lade-Freeze, Soft-Locks mit TTL, Gast-Read-Only-Schutz (bei frei nutzbarem lokalem Bibliotheksmodus), MCP-KI-Highlights sowie konfliktfreiem benutzerbezogenem Undo/Redo.
+- **Live-Präsenz, Cursor & unabhängige Navigation (`US-031` / `T-102` bis `T-105`):**
+  - Einklappbares Teilnehmer-Panel mit lokaler `Name → Farbe`-Verwaltung, Schaltplan-Anzeige und Host-Link-Kopie, entkoppelte Live-Cursor mit konfigurierbarer Inaktivitäts-Ausblendung und Sichtbarkeits-Filtermodi, farbige Fremd-Selektionen und Soft-Locks, Paletten-Präsenzpunkte, unabhängige Navigation und „Teilnehmer folgen“.
+- **Kollaborative Snapshot-Simulation mit Delta-Nachzug (`US-032` / `T-106`, `T-107`, `T-108`):**
+  - Seiteneffektfreie lokale Snapshot-Simulation pro Teilnehmer (ohne RAM- oder Frequenz-Rückschreibung ins Team-Projekt) mit freier Sub-Schaltungsnavigation im eingefrorenen Snapshot, Hintergrund-Delta-Pufferung, Host-Kontinuität, automatischem Revisions-Nachzug bzw. Reconnect-Catch-up beim Stoppen sowie UI-Hinweisen mit Direktaktion zum Beenden & Übernehmen.
+- **Behobene Bugs (`B-005` bis `B-008`):**
+  - Saubere Trennung von benutzerdefinierten und festen Paletten-Kategorien (`B-005`), korrigierte Subschaltungs-Vorschau und Browser-DragImage (`B-006`), vollständiges Laden und Speichern im Bibliotheks-Metadaten-Dialog (`B-007`) sowie Ausblenden leerer Beschriftungen bei Schaltungen und Pins ohne Namens-Fallback (`B-008`).
 
 ---
 

@@ -4,7 +4,12 @@ import styled from "@emotion/styled";
 
 import CanvasContextProvider from "../../contexts/canvasContext/provider";
 import CircuitContextProvider from "../../contexts/circuitContext/provider";
+import CollabContextProvider from "../../contexts/collabContext/provider";
+import LibraryContextProvider from "../../contexts/libraryContext/provider";
 import SimulationContextProvider from "../../contexts/simulationContext/provider";
+
+import CollabWorkspaceOverlay from "../collab/collabWorkspaceOverlay";
+import SessionEndedDialog from "../collab/sessionEndedDialog";
 
 import AppHeader from "./appHeader";
 import SimulationErrorDialog from "./simulationErrorDialog";
@@ -30,25 +35,31 @@ function isNativeContextMenuTarget(target: EventTarget | null): boolean {
 const App = styled(({ ...other }: AppProps) => (
   <CircuitContextProvider>
     <SimulationContextProvider>
-      <CanvasContextProvider>
-        <div
-          {...other}
-          data-component="App"
-          onContextMenu={(event) => {
-            if (!isNativeContextMenuTarget(event.target)) {
-              event.preventDefault();
-            }
-          }}
-        >
-          <AppHeader />
-          <div className="workspace-container">
-            <ComponentPalette />
-            <CircuitCanvas />
-          </div>
-          <StatusBar />
-          <SimulationErrorDialog />
-        </div>
-      </CanvasContextProvider>
+      <LibraryContextProvider>
+        <CanvasContextProvider>
+          <CollabContextProvider>
+            <div
+              {...other}
+              data-component="App"
+              onContextMenu={(event) => {
+                if (!isNativeContextMenuTarget(event.target)) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <AppHeader />
+              <div className="workspace-container">
+                <ComponentPalette />
+                <CircuitCanvas />
+                <CollabWorkspaceOverlay />
+              </div>
+              <StatusBar />
+              <SimulationErrorDialog />
+              <SessionEndedDialog />
+            </div>
+          </CollabContextProvider>
+        </CanvasContextProvider>
+      </LibraryContextProvider>
     </SimulationContextProvider>
   </CircuitContextProvider>
 ))({
@@ -61,6 +72,7 @@ const App = styled(({ ...other }: AppProps) => (
   color: "var(--color-text-primary)",
 
   "& > .workspace-container": {
+    position: "relative",
     display: "flex",
     flex: "1 0 0",
     overflow: "hidden",

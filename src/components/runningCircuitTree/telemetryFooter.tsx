@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import CanvasContext from "../../contexts/canvasContext";
 import CircuitContext from "../../contexts/circuitContext";
+import CollabContext from "../../contexts/collabContext";
 import SimulationContext from "../../contexts/simulationContext";
 
 import type FrameRateLimit from "../../types/simulation/frameRateLimit";
@@ -39,8 +40,18 @@ const TelemetryFooter = styled(({
   const { t, i18n } = useTranslation();
   const simulationContext = React.useContext(SimulationContext);
   const circuitContext = React.useContext(CircuitContext);
+  const collabContext = React.useContext(CollabContext);
   const canvasContext = React.useContext(CanvasContext);
   const oscillationLocation = simulationContext?.oscillationLocation ?? null;
+  const isSnapshotSim = Boolean(
+    collabContext?.isInSession &&
+    (simulationContext?.isCollabSnapshotSimulation || collabContext.modelSyncState?.isLocalSimulationBuffered),
+  );
+  const pendingSimDeltaCount = collabContext?.modelSyncState?.pendingSimulationDeltaCount ?? 0;
+  const requiresSimResync = Boolean(
+    collabContext?.modelSyncState?.requiresResyncAfterSimulation ||
+    collabContext?.modelSyncState?.hasPendingProjectSwitchDuringSim,
+  );
   const activeLocale = i18n.resolvedLanguage ?? i18n.language ?? "en";
 
   const applyFrequencyLimit = onFrameRateLimitChange ?? simulationContext?.setFrameRateLimit;
@@ -128,6 +139,22 @@ const TelemetryFooter = styled(({
             {statusText}
           </span>
         </div>
+
+        {isSnapshotSim && (
+          <div
+            className={`snapshot-sim-notice${pendingSimDeltaCount > 0 || requiresSimResync ? " has-updates" : ""}`}
+            data-testid="telemetry-snapshot-sim-notice"
+          >
+            <span>{t("runningTree.telemetry.snapshotModeBadge")}</span>
+            {(requiresSimResync || pendingSimDeltaCount > 0) && (
+              <span className="snapshot-sim-pending">
+                {requiresSimResync
+                  ? t("runningTree.telemetry.snapshotResyncPending")
+                  : t("runningTree.telemetry.snapshotPendingUpdates", { count: pendingSimDeltaCount })}
+              </span>
+            )}
+          </div>
+        )}
 
         {isOscillating && (
           <div className="oscillating-warning" role="alert">
@@ -253,6 +280,31 @@ const TelemetryFooter = styled(({
             },
           },
         },
+      },
+    },
+
+    "& > .snapshot-sim-notice": {
+      display: "flex",
+      flexDirection: "column",
+      gap: "0.18rem",
+      marginTop: "0.2rem",
+      padding: "0.35rem 0.5rem",
+      borderRadius: "0.25rem",
+      backgroundColor: "var(--color-bg-elevated)",
+      border: "1px solid var(--color-border-subtle)",
+      color: "var(--color-text-secondary)",
+      fontSize: "0.73rem",
+      lineHeight: 1.35,
+
+      "&.has-updates": {
+        backgroundColor: "var(--color-warning-bg)",
+        borderColor: "var(--color-warning-border)",
+        color: "var(--color-text-primary)",
+      },
+
+      "& > .snapshot-sim-pending": {
+        fontWeight: 600,
+        color: "var(--color-warning)",
       },
     },
 

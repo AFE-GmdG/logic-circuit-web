@@ -26,14 +26,24 @@
   - Ereignisgesteuerte Dreiwert-Logik (`Off`/Tri-State, `On0`, `On1`) mit schneller `DirtyList`-Auswertung in einem dedizierten WebWorker.
   - Null Laufzeit-Overhead für Subschaltungs-Rahmen, Pins und Splitter durch vollständige Hierarchie-Abflachung zur Compile-Zeit (`CircuitMap`).
   - Unterstützt Einzelschritt-Modus (`F10`), Ziel-Taktfrequenzen (`1 Hz` – `60 Hz`) sowie einen ungedrosselten **Max-FPS**-Modus mit entkoppeltem UI-Rendering (`requestAnimationFrame`).
+- **Analyse, Oszilloskop & HDL-Export:**
+  - Wahrheitstabellen-Auswertung im WebWorker (`Strg+T`, bis zu `4096` Zeilen, `validators`-Ausdrucksfilter, TSV-/CSV-Export), hierarchischer Verwendungsnachweis (`UsageDialog`) sowie strukturierter Schaltungsbericht (`ReportDialog` mit Markdown-Export).
+  - Schwebendes interaktives Oszilloskop (`Strg+O`) und Einzelsonden-Verlaufsdialog (`ProbeHistoryDialog`) mit Bus-Dekodierung, Zeitachsen-Zoom, Trennmarkierungen und Mess-Cursor.
+  - Multi-Target-HDL-Export nach **Verilog/SystemVerilog** (`.sv` + Testbench), **VHDL** (`.vhd` + Testbench) und **Nand2Tetris HDL** (`.hdl`, `.tst`, `.cmp`) mit Live-Vorschau und Mehrdatei-Ordner-Export via File System Access API.
+- **Schaltungs-Bibliothek & Standard-ICs:**
+  - Persistente Benutzer-Bibliothek (`*.lclib`) über die File System Access API (inklusive Read-Only-Reload-Cache), integrierte Standard-ICs, umschaltbare Seitenleiste (`Projekt` ↔ `Bibliothek`), Subschaltungs-Extraktion mit Hash-Abgleich sowie farblich gekennzeichneter Bibliotheks-Bearbeitungsmodus.
+- **WebRTC-Echtzeit-Kollaboration:**
+  - Direkte Peer-to-Peer-Kollaborations-Sessions mit flüchtigen 5-Minuten-Einladungslinks (*Gast* / *Kollaborateur*, ohne Lobby oder Chat), host-autoritativer Modell-Synchronisation mit 200er-Ringpuffer-Catch-up, Soft-Locks, benutzerbezogenem Undo/Redo und geschütztem Host-Handover.
+  - Live-Teilnehmer-Panel mit lokaler `Name → Farbe`-Verwaltung, entkoppelten Live-Cursorn (inklusive Inaktivitäts-Ausblendung und Filtermodi), unabhängiger Viewport-Navigation & „Teilnehmer folgen“ sowie seiteneffektfreier lokaler Snapshot-Simulation mit Hintergrund-Delta-Pufferung und automatischem Nachzug beim Beenden.
 - **Natives `.lcweb`-Projektformat & Desktop-Kompatibilität (`.CircuitProject`):**
   - Natives, strikt validiertes JSON-Projektformat (`*.lcweb`) mit direktem Dateisystemzugriff über die File System Access API (`IndexedDB`-Verzeichnis- und Dateihandles).
   - Nahtloser XML-Import und normalisierter Export für LogicCircuit Desktop (`*.CircuitProject`, Schema `2.0.0.14`).
   - Maßstabsgetreuer `PNG (1:1)`- und `SVG`-Bildexport (dunkles Raster oder transparenter Hintergrund, auch live während der Simulation).
 - **Mehrsprachigkeit (i18n):**
   - Vollständige Lokalisierung auf Deutsch und Englisch (`i18next` / `react-i18next`) mit automatischer Browser-Spracherkennung und Direktumschalter in der Statusleiste.
-- **Model Context Protocol (MCP) für KI-Assistenten:**
-  - Integrierte bidirektionale MCP-Bridge, über die KI-Assistenten (wie Antigravity oder Claude Desktop) Schaltungen in Echtzeit analysieren, aufbauen, validieren und simulieren können – lokal über Vite HMR oder remote über ein zustandsloses, DSGVO-konformes RAM-Relay und einen Multi-Tab-`SharedWorker` *(im statischen GitHub-Pages-Build deaktiviert)*.
+- **Model Context Protocol (MCP) für KI-Assistenten & BYO SideCar:**
+  - Integrierte bidirektionale **Streamable-HTTP-MCP-Bridge (`/mcp`)**, über die KI-Assistenten (wie Antigravity oder Claude Desktop) Schaltungen in Echtzeit analysieren, aufbauen, validieren und simulieren können – lokal über Vite HMR (`http://localhost:5173/mcp`) oder remote über einen zustandslosen, DSGVO-konformen Node-22-Sidecar mit Auth-First-Schutz, In-Memory-Rate-Limiting und Multi-Tab-`SharedWorker`.
+  - **Bring Your Own SideCar (`BYO SideCar`):** Im statischen GitHub-Pages-Build bleiben MCP und WebRTC-Kollaboration ohne ausdrückliche Konfiguration einer eigenen Sidecar-URL (`http://localhost:3001` oder `https://...`) komplett stumm; ein eigenständiges Sidecar-Paket (`.zip`) lässt sich direkt über **Hilfe → Download SideCar...** inklusive SemVer-Versionsabgleich herunterladen.
 
 ---
 
@@ -55,8 +65,9 @@ yarn install
 | Befehl | Beschreibung |
 | :--- | :--- |
 | `yarn dev` | Startet den Vite-Entwicklungsserver unter `http://localhost:5173` (inkl. lokaler MCP-Bridge) |
-| `yarn build` | Erstellt den Production-Build in `dist/` (inkl. Opt-in Remote-MCP-Unterstützung) |
-| `yarn build:pages` | Erstellt den statischen, MCP-freien Build in `dist/` (`VITE_DISABLE_MCP=true` für GitHub Pages) |
+| `yarn build` | Erstellt den Production-Build in `dist/` (inkl. Opt-in Remote-MCP, WebRTC-Collab & `downloads/logic-circuit-sidecar.zip`) |
+| `yarn build:pages` | Erstellt den statischen GitHub-Pages-Build in `dist/` (`--mode pages` / `SIDECAR_CUSTOM_ONLY=true`: null Standard-Netzwerk-Traffic, Opt-in-BYO-SideCar + herunterladbares Sidecar-ZIP) |
+| `yarn build:sidecar-zip` | Erzeugt das eigenständige Node-22-/Docker-Sidecar-ZIP unter `dist/downloads/` |
 | `yarn preview` | Startet eine lokale Vorschau des Production-Builds |
 | `yarn test` | Führt alle automatisierten Vitest-Unit- und Integrationstests aus |
 | `yarn errorcheck` | Prüft die TypeScript-Typen für Frontend (`tsconfig.json`) und Server (`tsconfig.server.json`) |
@@ -76,7 +87,9 @@ yarn install
 | `R` / `L` (oder `Shift+R`) | Auswahl um `90°` im / gegen den Uhrzeigersinn drehen |
 | `F2` / Doppelklick | Eigenschaftendialog für Bauteil oder aktive Schaltung öffnen |
 | `Strg+F` | Projektweite Bauteil- & Signalsuche öffnen |
+| `Strg+T` | Wahrheitstabellen-Auswertung öffnen |
 | `F5` / `Shift+F5` | Simulation starten oder pausieren / Simulation stoppen |
+| `Strg+O` | Oszilloskop während der Simulation öffnen |
 | `F10` | Einzelschritt-Simulation (Step) |
 
 ---
@@ -90,7 +103,7 @@ Die weiterführende Architektur- und Entwicklerdokumentation befindet sich im Ve
 - **[`docs/mcp.md`](docs/mcp.md):** Architektur, Werkzeugkatalog und Deployment-Leitfaden für die lokale und Remote-MCP-Integration.
 - **[`docs/coding-rules.md`](docs/coding-rules.md):** Verbindliche Entwicklungs-, Styling- und Formatierungsrichtlinien.
 - **[`docs/history.md`](docs/history.md):** Chronik „Was bisher geschah“ mit allen abgeschlossenen Releases, User Stories, Tasks und Bugfixes.
-- **[`docs/scrum-board.md`](docs/scrum-board.md):** Entwickler-Board und Post-1.0-Roadmap.
+- **[`docs/scrum-board.md`](docs/scrum-board.md):** Entwickler-Board, Backlog und Roadmap.
 
 ---
 

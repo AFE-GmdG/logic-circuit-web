@@ -335,7 +335,7 @@ export default [
           { pattern: "{react,react-dom,react-dom/**}", group: "builtin", position: "before" },
           { pattern: `{.,${REL_PREFIX}/{contexts,hooks}{,/**}}`, group: "internal", position: "before" },
           { pattern: `{${REL_PREFIX}/types/**,./gateShapeProps,./ioProps}`, group: "internal", position: "before" },
-          { pattern: `${REL_PREFIX}/{audio,i18n,mcp,server,simulation,utils}{,/**}`, group: "internal", position: "after" },
+          { pattern: `${REL_PREFIX}/{audio,collab,i18n,mcp,server,simulation,utils}{,/**}`, group: "internal", position: "after" },
           { pattern: `${REL_PREFIX}/components/**`, group: "parent", position: "after" },
           { pattern: `${REL_PREFIX}/**/*.{json,svg,png,css}`, group: "index", position: "after" },
         ],

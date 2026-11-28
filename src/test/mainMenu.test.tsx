@@ -198,13 +198,21 @@ describe("T-040: Hauptmenü, Schaltplanverwaltung & Hilfe-Dialog", () => {
         onOpenOptions={noop}
         onOpenPrivacy={noop}
         onOpenHelp={noop}
+        onOpenByoSidecar={noop}
+        onOpenSidecarDownload={noop}
       />,
     );
 
     const privacyIndex = helpHtml.indexOf("Datenschutz (GDPR)...");
     const shortcutsIndex = helpHtml.indexOf("Tastaturkürzel &amp; Über Logic Circuit Web...");
+    const separatorIndex = helpHtml.indexOf("role=\"separator\"");
+    const byoSidecarIndex = helpHtml.indexOf("BYO SideCar...");
+    const downloadSidecarIndex = helpHtml.indexOf("Download SideCar...");
     expect(privacyIndex).toBeGreaterThan(-1);
     expect(shortcutsIndex).toBeGreaterThan(privacyIndex);
+    expect(separatorIndex).toBeGreaterThan(shortcutsIndex);
+    expect(byoSidecarIndex).toBeGreaterThan(separatorIndex);
+    expect(downloadSidecarIndex).toBeGreaterThan(byoSidecarIndex);
   });
 
   it("deaktiviert destruktive Datei-Aktionen während aktiver Simulation, lässt Speichern jedoch aktiv", () => {
@@ -441,5 +449,174 @@ describe("T-040: Hauptmenü, Schaltplanverwaltung & Hilfe-Dialog", () => {
     expect(
       capturedContext.project.logicalCircuits.some((lc) => lc.logicalCircuitId === createdId),
     ).toBe(false);
+  });
+
+  it("zeigt Kollaborations-Einträge im Datei-Menü zustandsabhängig und blendet sie bei isCollabDisabled aus", () => {
+    const idleHtml = renderToStaticMarkup(
+      <MainMenu
+        isOpen={true}
+        initialCategory="file"
+        isSimulating={false}
+        isPaused={false}
+        isRunning={false}
+        canUndo={false}
+        canRedo={false}
+        hasSelection={false}
+        hasSymbolSelection={false}
+        canDeleteCurrentCircuit={false}
+        isCollabDisabled={false}
+        isCollabInSession={false}
+        onStartCollabSession={noop}
+        onJoinCollabSession={noop}
+        onClose={noop}
+        onNewProject={noop}
+        onLoadDemo={noop}
+        onImportProject={noop}
+        onSaveProject={noop}
+        onSaveProjectAs={noop}
+        onExportImage={noop}
+        onOpenProjectSettings={noop}
+        onUndo={noop}
+        onRedo={noop}
+        onDeleteSelected={noop}
+        onRotateRight={noop}
+        onRotateLeft={noop}
+        onEditCurrentCircuit={noop}
+        onCreateCircuit={noop}
+        onDeleteCurrentCircuit={noop}
+        onToggleSimulation={noop}
+        onStepSimulation={noop}
+        onStopSimulation={noop}
+        onOpenOptions={noop}
+        onOpenHelp={noop}
+      />,
+    );
+    expect(idleHtml).toContain("Kollaborations-Session starten...");
+    expect(idleHtml).toContain("Per Einladungslink beitreten...");
+
+    const hostActiveHtml = renderToStaticMarkup(
+      <MainMenu
+        isOpen={true}
+        initialCategory="file"
+        isSimulating={false}
+        isPaused={false}
+        isRunning={false}
+        canUndo={false}
+        canRedo={false}
+        hasSelection={false}
+        hasSymbolSelection={false}
+        canDeleteCurrentCircuit={false}
+        isCollabDisabled={false}
+        isCollabInSession={true}
+        isCollabHost={true}
+        isCollabParticipantsPanelOpen={true}
+        onToggleCollabParticipantsPanel={noop}
+        onEndOrLeaveCollabSession={noop}
+        onClose={noop}
+        onNewProject={noop}
+        onLoadDemo={noop}
+        onImportProject={noop}
+        onSaveProject={noop}
+        onSaveProjectAs={noop}
+        onExportImage={noop}
+        onOpenProjectSettings={noop}
+        onUndo={noop}
+        onRedo={noop}
+        onDeleteSelected={noop}
+        onRotateRight={noop}
+        onRotateLeft={noop}
+        onEditCurrentCircuit={noop}
+        onCreateCircuit={noop}
+        onDeleteCurrentCircuit={noop}
+        onToggleSimulation={noop}
+        onStepSimulation={noop}
+        onStopSimulation={noop}
+        onOpenOptions={noop}
+        onOpenHelp={noop}
+      />,
+    );
+    expect(hostActiveHtml).toContain("Teilnehmer-Panel anzeigen");
+    expect(hostActiveHtml).toContain("Kollaborations-Session beenden");
+
+    const peerActiveHtml = renderToStaticMarkup(
+      <MainMenu
+        isOpen={true}
+        initialCategory="file"
+        isSimulating={false}
+        isPaused={false}
+        isRunning={false}
+        canUndo={false}
+        canRedo={false}
+        hasSelection={false}
+        hasSymbolSelection={false}
+        canDeleteCurrentCircuit={false}
+        isCollabDisabled={false}
+        isCollabInSession={true}
+        isCollabHost={false}
+        onToggleCollabParticipantsPanel={noop}
+        onEndOrLeaveCollabSession={noop}
+        onClose={noop}
+        onNewProject={noop}
+        onLoadDemo={noop}
+        onImportProject={noop}
+        onSaveProject={noop}
+        onSaveProjectAs={noop}
+        onExportImage={noop}
+        onOpenProjectSettings={noop}
+        onUndo={noop}
+        onRedo={noop}
+        onDeleteSelected={noop}
+        onRotateRight={noop}
+        onRotateLeft={noop}
+        onEditCurrentCircuit={noop}
+        onCreateCircuit={noop}
+        onDeleteCurrentCircuit={noop}
+        onToggleSimulation={noop}
+        onStepSimulation={noop}
+        onStopSimulation={noop}
+        onOpenOptions={noop}
+        onOpenHelp={noop}
+      />,
+    );
+    expect(peerActiveHtml).toContain("Kollaborations-Session verlassen");
+
+    const disabledHtml = renderToStaticMarkup(
+      <MainMenu
+        isOpen={true}
+        initialCategory="file"
+        isSimulating={false}
+        isPaused={false}
+        isRunning={false}
+        canUndo={false}
+        canRedo={false}
+        hasSelection={false}
+        hasSymbolSelection={false}
+        canDeleteCurrentCircuit={false}
+        isCollabDisabled={true}
+        onClose={noop}
+        onNewProject={noop}
+        onLoadDemo={noop}
+        onImportProject={noop}
+        onSaveProject={noop}
+        onSaveProjectAs={noop}
+        onExportImage={noop}
+        onOpenProjectSettings={noop}
+        onUndo={noop}
+        onRedo={noop}
+        onDeleteSelected={noop}
+        onRotateRight={noop}
+        onRotateLeft={noop}
+        onEditCurrentCircuit={noop}
+        onCreateCircuit={noop}
+        onDeleteCurrentCircuit={noop}
+        onToggleSimulation={noop}
+        onStepSimulation={noop}
+        onStopSimulation={noop}
+        onOpenOptions={noop}
+        onOpenHelp={noop}
+      />,
+    );
+    expect(disabledHtml).not.toContain("Kollaborations-Session starten...");
+    expect(disabledHtml).not.toContain("Kollaborations-Session beenden");
   });
 });

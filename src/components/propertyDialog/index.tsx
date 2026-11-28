@@ -5,6 +5,8 @@ import styled from "@emotion/styled";
 import { useTranslation } from "react-i18next";
 
 import CircuitContext from "../../contexts/circuitContext";
+import CollabContext from "../../contexts/collabContext";
+import LibraryContext from "../../contexts/libraryContext";
 import SimulationContext from "../../contexts/simulationContext";
 
 import type GridPoint from "../../types/canvas/gridPoint";
@@ -39,6 +41,7 @@ import type SoundWaveform from "../../types/circuit/soundWaveform";
 import type Splitter from "../../types/circuit/splitter";
 import type Synthesizer from "../../types/circuit/synthesizer";
 import type SynthesizerMode from "../../types/circuit/synthesizerMode";
+import type { CollabSoftLockEntry } from "../../types/collab/modelSyncMessage";
 
 import {
   DEFAULT_RANDOM_DATA,
@@ -106,9 +109,13 @@ export type PropertyDialogProps = React.ComponentPropsWithoutRef<"div"> & {
   isOpen: boolean;
   symbol?: CircuitSymbol | null;
   circuit?: LogicalCircuit | null;
+  contextCircuits?: readonly LogicalCircuit[];
   isCreatingCircuit?: boolean;
   categories?: string[];
   initialPitchTableOpen?: boolean;
+  accentVariant?: "default" | "library";
+  customTitle?: string;
+  customSaveLabel?: string;
   onSaveSymbol?: (symbolId: string, updates: CircuitSymbolPropertiesUpdate) => void;
   onSaveCircuit?: (circuitId: string, updates: CircuitPropertiesUpdate) => void;
   onCreateCircuit?: (input: CreateCircuitInput) => void;
@@ -274,6 +281,10 @@ const PropertyDialog = styled(({
   isCreatingCircuit = false,
   categories,
   initialPitchTableOpen = false,
+  accentVariant = "default",
+  customTitle,
+  customSaveLabel,
+  contextCircuits,
   onSaveSymbol,
   onSaveCircuit,
   onCreateCircuit,
@@ -282,7 +293,79 @@ const PropertyDialog = styled(({
 }: PropertyDialogProps) => {
   const { t, i18n } = useTranslation();
   const circuitContext = React.useContext(CircuitContext);
+  const collabContext = React.useContext(CollabContext);
+  const libraryContext = React.useContext(LibraryContext);
   const simulationContext = React.useContext(SimulationContext);
+
+  const isLibraryContext = accentVariant === "library" || Boolean(libraryContext?.isEditingLibrary);
+  const isSharedCollabTarget = Boolean(
+    isOpen && !isCreatingCircuit && !isLibraryContext && collabContext?.isInSession,
+  );
+  const lockTargetType = symbol ? ("symbol" as const) : circuit ? ("logicalCircuit" as const) : null;
+  const lockTargetId = symbol ? symbol.circuitSymbolId : circuit ? circuit.logicalCircuitId : undefined;
+  const lockTargetCircuitId = symbol ? symbol.logicalCircuitId : circuit ? circuit.logicalCircuitId : undefined;
+  const isCollabReadOnly = Boolean(
+    isSharedCollabTarget &&
+    (collabContext?.modelSyncState?.isReadOnlyForGuest || collabContext?.modelSyncState?.isQuiesced),
+  );
+  const foreignLock: CollabSoftLockEntry | null = React.useMemo(
+    () => {
+      if (!isSharedCollabTarget || !lockTargetType || !lockTargetId) {
+        return null;
+      }
+      const liveMatch = (collabContext?.modelSyncState?.softLocks ?? []).find(
+        (lock) =>
+          lock.targetType === lockTargetType &&
+          lock.targetId === lockTargetId &&
+          lock.ownerPeerId !== collabContext?.selfPeerId,
+      );
+      return liveMatch ?? collabContext?.getForeignLockForTarget?.(lockTargetType, lockTargetId) ?? null;
+    },
+    [
+      collabContext,
+      isSharedCollabTarget,
+      lockTargetId,
+      lockTargetType,
+    ],
+  );
+  const isDialogReadOnly = isCollabReadOnly || foreignLock !== null;
+  const acquireSoftLocks = collabContext?.acquireSoftLocks;
+  const releaseSoftLocks = collabContext?.releaseSoftLocks;
+
+  React.useEffect(
+    () => {
+      if (
+        !isSharedCollabTarget ||
+        !lockTargetType ||
+        !lockTargetId ||
+        !lockTargetCircuitId ||
+        isCollabReadOnly
+      ) {
+        return undefined;
+      }
+      const target = {
+        targetType: lockTargetType,
+        targetId: lockTargetId,
+        logicalCircuitId: lockTargetCircuitId,
+      };
+      const result = acquireSoftLocks?.([target], "property-dialog");
+      if (result && !result.ok) {
+        return undefined;
+      }
+      return () => {
+        releaseSoftLocks?.([{ targetType: lockTargetType, targetId: lockTargetId }]);
+      };
+    },
+    [
+      acquireSoftLocks,
+      isCollabReadOnly,
+      isSharedCollabTarget,
+      lockTargetCircuitId,
+      lockTargetId,
+      lockTargetType,
+      releaseSoftLocks,
+    ],
+  );
 
   const pinSideOptions: { value: PinSide; label: string }[] = [
     { value: "right", label: t("common.pinSideDefaultRight") },
@@ -762,19 +845,23 @@ const PropertyDialog = styled(({
     return GRAPHICS_ARRAY_DEFAULT_ZOOM;
   });
 
+  const effectiveProjectPins = contextCircuits ? undefined : circuitContext?.project?.pins;
+
   const initialTargetCircuit = React.useMemo(
     () => {
       const raw = circuit ?? (symbol?.circuit.kind === "logicalCircuit" ? (symbol.circuit as LogicalCircuit) : null);
       if (!raw) {
         return null;
       }
-      return circuitContext?.project?.logicalCircuits.find(
+      const sourceCircuits = contextCircuits ?? circuitContext?.project?.logicalCircuits;
+      return sourceCircuits?.find(
         (lc) => lc.logicalCircuitId === raw.logicalCircuitId,
       ) ?? raw;
     },
     [
       circuit,
       circuitContext?.project?.logicalCircuits,
+      contextCircuits,
       symbol,
     ],
   );
@@ -785,8 +872,9 @@ const PropertyDialog = styled(({
     () => initialTargetCircuit?.name ?? (isCreatingCircuit ? t("dialog.property.newCircuitDefaultName") : ""),
   );
   const [circuitNotation, setCircuitNotation] = React.useState<string>(
-    () => initialTargetCircuit?.notation ?? "",
+    () => initialTargetCircuit?.notation ?? (isCreatingCircuit ? t("dialog.property.newCircuitDefaultName") : ""),
   );
+  const [circuitNotationTouched, setCircuitNotationTouched] = React.useState<boolean>(false);
   const [circuitCategory, setCircuitCategory] = React.useState<string>(
     () => initialTargetCircuit?.category ?? "",
   );
@@ -807,10 +895,10 @@ const PropertyDialog = styled(({
     () => initialTargetCircuit?.exportToHDL ?? true,
   );
   const [pinOrderDraft, setPinOrderDraft] = React.useState<Pin[]>(
-    () => resolveCircuitPinState(initialTargetCircuit, circuitContext?.project?.pins).pins,
+    () => resolveCircuitPinState(initialTargetCircuit, effectiveProjectPins).pins,
   );
   const [useGraphicalPinOrder, setUseGraphicalPinOrder] = React.useState<boolean>(() => {
-    const { pins } = resolveCircuitPinState(initialTargetCircuit, circuitContext?.project?.pins);
+    const { pins } = resolveCircuitPinState(initialTargetCircuit, effectiveProjectPins);
     return pins.every((p) => (p.index ?? 0) === 0);
   });
   const [selectedPinIdBySide, setSelectedPinIdBySide] = React.useState<Partial<Record<PinSide, string>>>({});
@@ -820,24 +908,29 @@ const PropertyDialog = styled(({
     return symbol?.circuit.note ?? "";
   });
 
-  // Prüft anhand des Projekts, ob Display-Bauteile für die Symbolform "Anzeige" vorliegen
+  // Prüft anhand des übergebenen Kontexts (Projekt oder Bibliothek), ob Display-Bauteile vorliegen
   const canUseDisplayShape = React.useMemo(
     () => {
       if (!initialTargetCircuit) {
         return false;
       }
-      const lcMap = circuitContext?.project?.logicalCircuits
-        ? new Map(circuitContext.project.logicalCircuits.map((lc) => [lc.logicalCircuitId, lc]))
+      const sourceCircuits = contextCircuits ?? circuitContext?.project?.logicalCircuits;
+      const lcMap = sourceCircuits
+        ? new Map(sourceCircuits.map((lc) => [lc.logicalCircuitId, lc]))
         : undefined;
       return circuitContainsDisplays(initialTargetCircuit, lcMap);
     },
-    [circuitContext?.project?.logicalCircuits, initialTargetCircuit],
+    [
+      circuitContext?.project?.logicalCircuits,
+      contextCircuits,
+      initialTargetCircuit,
+    ],
   );
 
   // Interne Koordinaten der Pin-Symbole für die grafische Sortierung
   const pinSymbolCoords = React.useMemo(
-    () => resolveCircuitPinState(initialTargetCircuit, circuitContext?.project?.pins).symbolCoords,
-    [circuitContext?.project?.pins, initialTargetCircuit],
+    () => resolveCircuitPinState(initialTargetCircuit, effectiveProjectPins).symbolCoords,
+    [effectiveProjectPins, initialTargetCircuit],
   );
 
   // Nach Bauteilseite sortierte Pin-Listen für den Pin-Reihenfolge-Editor
@@ -985,10 +1078,11 @@ const PropertyDialog = styled(({
           setGaZoom(ga.zoom ?? GRAPHICS_ARRAY_DEFAULT_ZOOM);
         } else if (circ.kind === "logicalCircuit") {
           const lc = initialTargetCircuit ?? (circ as LogicalCircuit);
-          const { pins } = resolveCircuitPinState(lc, circuitContext?.project?.pins);
+          const { pins } = resolveCircuitPinState(lc, effectiveProjectPins);
           setCircuitTab("schematic");
           setCircuitName(lc.name ?? "");
           setCircuitNotation(lc.notation ?? "");
+          setCircuitNotationTouched(false);
           setCircuitCategory(lc.category ?? "");
           setCircuitNote(lc.note ?? "");
           setCircuitShape(lc.circuitShape ?? (lc.isDisplay ? "display" : "rectangular"));
@@ -1002,10 +1096,11 @@ const PropertyDialog = styled(({
         }
       } else if (circuit) {
         const lc = initialTargetCircuit ?? circuit;
-        const { pins } = resolveCircuitPinState(lc, circuitContext?.project?.pins);
+        const { pins } = resolveCircuitPinState(lc, effectiveProjectPins);
         setCircuitTab("schematic");
         setCircuitName(lc.name ?? "");
         setCircuitNotation(lc.notation ?? "");
+        setCircuitNotationTouched(false);
         setCircuitCategory(lc.category ?? "");
         setCircuitNote(lc.note ?? "");
         setCircuitShape(lc.circuitShape ?? (lc.isDisplay ? "display" : "rectangular"));
@@ -1019,7 +1114,8 @@ const PropertyDialog = styled(({
       } else if (isCreatingCircuit) {
         setCircuitTab("schematic");
         setCircuitName(t("dialog.property.newCircuitDefaultName"));
-        setCircuitNotation("");
+        setCircuitNotation(t("dialog.property.newCircuitDefaultName"));
+        setCircuitNotationTouched(false);
         setCircuitCategory("");
         setCircuitNote("");
         setCircuitShape("rectangular");
@@ -1034,7 +1130,7 @@ const PropertyDialog = styled(({
     },
     [
       circuit,
-      circuitContext?.project?.pins,
+      effectiveProjectPins,
       initialPitchTableOpen,
       initialTargetCircuit,
       isCreatingCircuit,
@@ -1145,6 +1241,9 @@ const PropertyDialog = styled(({
 
   const handleSave = React.useCallback(
     () => {
+      if (isDialogReadOnly) {
+        return;
+      }
       if (symbol) {
         const circ = symbol.circuit;
 
@@ -1335,7 +1434,7 @@ const PropertyDialog = styled(({
           const resolvedName = circuitName.trim() || circ.name;
           onSaveCircuit?.((circ as LogicalCircuit).logicalCircuitId, {
             name: resolvedName,
-            notation: circuitNotation.trim() || resolvedName,
+            notation: circuitNotation.trim(),
             category: circuitCategory.trim(),
             note: circuitNote,
             circuitShape,
@@ -1349,7 +1448,7 @@ const PropertyDialog = styled(({
         const resolvedName = circuitName.trim() || circuit.name;
         onSaveCircuit?.(circuit.logicalCircuitId, {
           name: resolvedName,
-          notation: circuitNotation.trim() || resolvedName,
+          notation: circuitNotation.trim(),
           category: circuitCategory.trim(),
           note: circuitNote,
           circuitShape,
@@ -1365,7 +1464,7 @@ const PropertyDialog = styled(({
         }
         onCreateCircuit?.({
           name: trimmedName,
-          notation: circuitNotation.trim() || trimmedName,
+          notation: circuitNotation.trim(),
           category: circuitCategory.trim(),
           note: circuitNote,
           circuitShape: circuitShape === "display" ? "rectangular" : circuitShape,
@@ -1410,6 +1509,7 @@ const PropertyDialog = styled(({
       gateType,
       generalNote,
       isCreatingCircuit,
+      isDialogReadOnly,
       matrixCellShape,
       matrixColors,
       matrixColumns,
@@ -1586,12 +1686,14 @@ const PropertyDialog = styled(({
               ? " modal-dialog-wide"
               : ""
           }` +
-          `${kind === "memory" ? " modal-dialog-memory" : ""}`
+          `${kind === "memory" ? " modal-dialog-memory" : ""}` +
+          `${accentVariant === "library" ? " library-accent" : ""}`
         }
+        data-accent-variant={accentVariant}
       >
         <div className="modal-header">
           <h3 id="property-dialog-title" className="modal-title">
-            {title}
+            {customTitle ?? title}
           </h3>
           <button
             type="button"
@@ -1604,6 +1706,17 @@ const PropertyDialog = styled(({
         </div>
 
         <div className="modal-body">
+          {isDialogReadOnly && (
+            <div
+              className={`collab-dialog-banner${foreignLock ? " is-locked" : " is-readonly"}`}
+              data-testid={foreignLock ? "property-dialog-lock-banner" : "property-dialog-readonly-banner"}
+              role="status"
+            >
+              {foreignLock
+                ? t("collabSync.dialogLockedBanner", { name: foreignLock.ownerDisplayName })
+                : t("collabSync.dialogGuestReadOnlyBanner")}
+            </div>
+          )}
           {/* Gatter-Eigenschaften */}
           {kind === "gate" && (
             <>
@@ -3187,7 +3300,13 @@ const PropertyDialog = styled(({
                         type="text"
                         className="form-input"
                         value={circuitName}
-                        onChange={(e) => setCircuitName(e.target.value)}
+                        onChange={(e) => {
+                          const nextName = e.target.value;
+                          setCircuitName(nextName);
+                          if (isCreatingCircuit && !circuitNotationTouched) {
+                            setCircuitNotation(nextName);
+                          }
+                        }}
                         placeholder={t("dialog.property.circuitNamePlaceholder")}
                         autoFocus={true}
                       />
@@ -3202,8 +3321,11 @@ const PropertyDialog = styled(({
                         type="text"
                         className="form-input"
                         value={circuitNotation}
-                        onChange={(e) => setCircuitNotation(e.target.value)}
-                        placeholder={circuitName || t("dialog.property.circuitNotationPlaceholder")}
+                        onChange={(e) => {
+                          setCircuitNotationTouched(true);
+                          setCircuitNotation(e.target.value);
+                        }}
+                        placeholder={t("dialog.property.circuitNotationPlaceholder")}
                       />
                     </div>
                   </div>
@@ -3494,6 +3616,7 @@ const PropertyDialog = styled(({
               type="button"
               className="btn btn-primary"
               disabled={
+                isDialogReadOnly ||
                 (kind === "constant" && !constantValueStr.trim()) ||
                 isGaWidthInvalid ||
                 isGaHeightInvalid ||
@@ -3501,9 +3624,11 @@ const PropertyDialog = styled(({
               }
               onClick={handleSave}
             >
-              {isCreatingCircuit && !circuit && !symbol
-                ? t("dialog.property.createButton")
-                : t("dialog.property.saveButton")}
+              {customSaveLabel
+                ? customSaveLabel
+                : isCreatingCircuit && !circuit && !symbol
+                  ? t("dialog.property.createButton")
+                  : t("dialog.property.saveButton")}
             </button>
           </div>
         </div>
@@ -3560,6 +3685,11 @@ const PropertyDialog = styled(({
       maxWidth: "95vw",
     },
 
+    "&.library-accent": {
+      border: "2px solid var(--color-library-accent)",
+      boxShadow: "0 10px 28px rgba(245, 158, 11, 0.22)",
+    },
+
     "& > .modal-header": {
       display: "flex",
       alignItems: "center",
@@ -3596,6 +3726,17 @@ const PropertyDialog = styled(({
       display: "flex",
       flexDirection: "column",
       gap: "0.85rem",
+
+      "& > .collab-dialog-banner": {
+        padding: "0.55rem 0.75rem",
+        borderRadius: "0.375rem",
+        fontSize: "0.8125rem",
+        fontWeight: 600,
+        lineHeight: 1.35,
+        backgroundColor: "var(--color-warning-bg)",
+        border: "1px solid var(--color-warning-border)",
+        color: "var(--color-text-primary)",
+      },
 
       "& .form-row": {
         display: "flex",

@@ -8,6 +8,7 @@ import SimulationContext from "../../contexts/simulationContext";
 
 import type DisplayColor from "../../types/circuit/displayColor";
 import type LedMatrixType from "../../types/circuit/ledMatrixType";
+import type LogicalCircuit from "../../types/circuit/logicalCircuit";
 import type PaletteGateType from "../../types/circuit/paletteGateType";
 import type PaletteSelection from "../../types/circuit/paletteSelection";
 import type PinSide from "../../types/circuit/pinSide";
@@ -24,6 +25,7 @@ import {
 import { getComponentLayout } from "../../utils/circuitLayout";
 import { SOUND_WAVEFORMS, SYNTHESIZER_MODES } from "../../utils/componentCatalog";
 import { GRID_SIZE } from "../../utils/coordinateSystem";
+import { hideBrowserDragImage } from "../../utils/dragImage";
 import {
   GRAPHICS_ARRAY_BITS_PER_PIXEL,
   GRAPHICS_ARRAY_DATA_BIT_WIDTHS,
@@ -32,6 +34,7 @@ import {
 } from "../../utils/graphicsArrayUtils";
 
 import SubCircuitGlyph from "./subCircuitGlyph";
+import SubCircuitPreview from "./subCircuitPreview";
 import SymbolRenderer from "../symbols/symbolRenderer";
 
 const BIT_WIDTH_OPTIONS = Array.from({ length: 32 }, (_, i) => i + 1);
@@ -42,6 +45,7 @@ export type PaletteItemProps = React.ComponentPropsWithoutRef<"div"> & {
   type: PaletteGateType | "subCircuit" | "textNote";
   label: string;
   subCircuitId?: string;
+  subCircuit?: LogicalCircuit;
 
   // Gate Eingänge
   inputCount?: number;
@@ -128,6 +132,9 @@ export type PaletteItemProps = React.ComponentPropsWithoutRef<"div"> & {
   onSelect?: () => void;
   isActive?: boolean;
   isCycle?: boolean;
+  isReadOnly?: boolean;
+  readOnlyTooltip?: string;
+  presenceParticipants?: ReadonlyArray<{ peerId: string; displayName: string; color: string }>;
   onActivate?: () => void;
   onDelete?: () => void;
   deleteDisabledReason?: string;
@@ -137,6 +144,7 @@ const PaletteItem = styled(({
   type,
   label,
   subCircuitId,
+  subCircuit,
   inputCount = 2,
   hasVariableInputs = false,
   onInputCountChange,
@@ -194,6 +202,9 @@ const PaletteItem = styled(({
   onSelect,
   isActive = false,
   isCycle = false,
+  isReadOnly = false,
+  readOnlyTooltip,
+  presenceParticipants,
   onActivate,
   onDelete,
   deleteDisabledReason,
@@ -205,7 +216,7 @@ const PaletteItem = styled(({
   const { isSimulating } = React.useContext(SimulationContext);
   const isSubCircuit = type === "subCircuit";
   const isTextNote = type === "textNote";
-  const isDragBlocked = (isSubCircuit && (isActive || isCycle)) || isSimulating;
+  const isDragBlocked = (isSubCircuit && (isActive || isCycle)) || isSimulating || isReadOnly;
 
   const sensorTypeOptions: { value: SensorType; label: string }[] = [
     { value: "random", label: t("palette.sensorModes.random") },
@@ -337,6 +348,7 @@ const PaletteItem = styled(({
       };
       event.dataTransfer.setData("application/json", JSON.stringify(selection));
       event.dataTransfer.effectAllowed = "copy";
+      hideBrowserDragImage(event.dataTransfer);
       circuitContext?.setActivePaletteDrag?.(selection);
     },
     [
@@ -407,11 +419,22 @@ const PaletteItem = styled(({
     ],
   );
 
+  const itemClassName = [
+    className,
+    "palette-item",
+    isActive ? "active" : "",
+    isCycle ? "cycle-blocked" : "",
+    isReadOnly ? "readonly-blocked" : "",
+    hasAnyControl ? "has-controls" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
       {...other}
       data-component="PaletteItem"
-      className={`${className} palette-item ${isActive ? "active" : ""} ${isCycle ? "cycle-blocked" : ""} ${hasAnyControl ? "has-controls" : ""}`}
+      className={itemClassName}
       role="button"
       tabIndex={0}
       draggable={!isDragBlocked}
@@ -423,7 +446,9 @@ const PaletteItem = styled(({
             ? t("palette.item.titleCycleBlocked", { label })
             : isSubCircuit
               ? t("palette.item.titleSubCircuit", { label })
-              : label)
+              : isReadOnly && readOnlyTooltip
+                ? readOnlyTooltip
+                : label)
       }
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -448,7 +473,16 @@ const PaletteItem = styled(({
       {/* Spalte 1: Bauteil-Vorschau ohne störenden Rahmen */}
       <div className="item-preview">
         {isSubCircuit ? (
-          <SubCircuitGlyph name={label} />
+          subCircuit ? (
+            <SubCircuitPreview
+              circuit={subCircuit}
+              width={54}
+              height={36}
+              className="preview-svg"
+            />
+          ) : (
+            <SubCircuitGlyph name={label} />
+          )
         ) : isTextNote ? (
           <svg
             width={54}
@@ -530,6 +564,28 @@ const PaletteItem = styled(({
       <div className="item-body">
         <div className="item-header">
           <span className="item-label">{label}</span>
+          {isSubCircuit && presenceParticipants && presenceParticipants.length > 0 && (
+            <span
+              className="presence-dots"
+              data-testid={`palette-circuit-presence-${subCircuitId ?? ""}`}
+              title={t("palette.item.presenceTooltip", {
+                names: presenceParticipants.map((participant) => participant.displayName).join(", "),
+              })}
+            >
+              {presenceParticipants.slice(0, 5).map((participant) => (
+                <span
+                  key={participant.peerId}
+                  className="presence-dot"
+                  data-testid={`palette-circuit-presence-dot-${subCircuitId ?? ""}-${participant.peerId}`}
+                  data-color={participant.color}
+                  style={{ backgroundColor: participant.color }}
+                />
+              ))}
+              {presenceParticipants.length > 5 && (
+                <span className="presence-more">+{presenceParticipants.length - 5}</span>
+              )}
+            </span>
+          )}
           {isActive && <span className="active-badge">{t("palette.item.activeBadge")}</span>}
           {isSubCircuit && onDelete && (
             <button
@@ -967,6 +1023,15 @@ const PaletteItem = styled(({
     cursor: "not-allowed",
   },
 
+  "&.readonly-blocked": {
+    opacity: 0.72,
+    cursor: "default",
+  },
+
+  "&.readonly-blocked:active:not(.active)": {
+    cursor: "default",
+  },
+
   "&:active:not(.active)": {
     cursor: "grabbing",
   },
@@ -1023,6 +1088,27 @@ const PaletteItem = styled(({
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis",
+      },
+
+      "& > .presence-dots": {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.2rem",
+        marginLeft: "0.35rem",
+        flexShrink: 0,
+
+        "& > .presence-dot": {
+          width: "0.5rem",
+          height: "0.5rem",
+          borderRadius: "50%",
+          border: "1px solid rgba(255, 255, 255, 0.55)",
+        },
+
+        "& > .presence-more": {
+          fontSize: "0.68rem",
+          fontWeight: 700,
+          color: "var(--color-text-secondary)",
+        },
       },
 
       "& > .active-badge": {

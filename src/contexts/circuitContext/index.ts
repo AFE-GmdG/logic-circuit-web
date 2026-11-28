@@ -21,11 +21,41 @@ import type TextNote from "../../types/circuit/textNote";
 import type TextNoteFontFamily from "../../types/circuit/textNoteFontFamily";
 import type TextNoteLineHeight from "../../types/circuit/textNoteLineHeight";
 import type Wire from "../../types/circuit/wire";
+import type { CollabSerializedMutation } from "../../types/collab/modelSyncMessage";
 import type CircuitDelta from "../../types/history/circuitDelta";
 import type HistoryState from "../../types/history/historyState";
 import type AppSettings from "../../types/settings/appSettings";
+import type { NativeLogicalCircuit } from "../../types/storage/nativeProjectFormat";
 
 import type { FileSystemFileHandleLike } from "../../utils/fileSystemStorage";
+
+export type CircuitProjectSnapshot = {
+  project: CircuitProject;
+  currentCircuitId: string;
+  historiesByCircuit: Record<string, HistoryState>;
+  hasUnsavedChanges: boolean;
+  activeFileHandle: FileSystemFileHandleLike | null;
+  activeFileName: string | null;
+};
+
+export type CircuitCollabSyncBridge = {
+  canMutateProject: () => boolean;
+  onLocalDeltaCommitted: (
+    delta: CircuitDelta,
+    projectAfterDelta: CircuitProject,
+    options?: { importedSubCircuits?: readonly LogicalCircuit[] },
+  ) => void;
+  onLocalMutation: (mutation: CollabSerializedMutation) => void;
+  onLocalProjectReplaced: (nextProject: CircuitProject) => void;
+  isCollabUndoActive?: () => boolean;
+  getCollabHistory?: (logicalCircuitId: string) => HistoryState;
+  canCollabUndo?: (logicalCircuitId: string) => boolean;
+  canCollabRedo?: (logicalCircuitId: string) => boolean;
+  performCollabUndo?: (logicalCircuitId: string) => boolean;
+  performCollabRedo?: (logicalCircuitId: string) => boolean;
+  clearCollabHistory?: (logicalCircuitId: string) => void;
+  subscribeUndoState?: (listener: () => void) => () => void;
+};
 
 type CircuitContextType = {
   project: CircuitProject;
@@ -126,15 +156,42 @@ type CircuitContextType = {
   undo: () => void;
   redo: () => void;
   clearHistory: () => void;
-  recordDelta: (delta: CircuitDelta) => void;
+  recordDelta: (
+    delta: CircuitDelta,
+    options?: { skipCollabSync?: boolean; importedSubCircuits?: readonly LogicalCircuit[] },
+  ) => void;
   setCurrentCircuitId: (circuitId: string) => void;
   createCircuits: (circuits: CreateCircuitInput[]) => LogicalCircuit[];
   deleteCircuits: (circuitIds: string[]) => DeleteCircuitsResult;
+  importLibraryCircuit?: (
+    libraryCircuits: readonly NativeLogicalCircuit[],
+    rootCircuitId: string,
+    options?: {
+      targetCircuitId?: string;
+      gridPoint?: GridPoint;
+      deduplicateRoot?: boolean;
+    },
+  ) => {
+    rootCircuitId: string;
+    addedCircuitIds: string[];
+    reusedCircuitIds: string[];
+    placedSymbol?: CircuitSymbol;
+  };
   activePaletteDrag: PaletteSelection | null;
   setActivePaletteDrag: (selection: PaletteSelection | null) => void;
   loadProject: (
     nextProject: CircuitProject,
-    fileMeta?: { handle?: FileSystemFileHandleLike | null; fileName?: string | null },
+    fileMeta?: { handle?: FileSystemFileHandleLike | null; fileName?: string | null; suppressCollabSync?: boolean },
+  ) => void;
+  captureProjectSnapshot?: () => CircuitProjectSnapshot;
+  restoreProjectSnapshot?: (
+    snapshot: CircuitProjectSnapshot,
+    options?: { suppressCollabSync?: boolean },
+  ) => void;
+  registerCollabSyncBridge?: (bridge: CircuitCollabSyncBridge | null) => void;
+  applyRemoteProjectState?: (
+    nextProject: CircuitProject,
+    options?: { resetHistory?: boolean; preserveSelection?: boolean },
   ) => void;
   importProjectFromText: (
     rawText: string,

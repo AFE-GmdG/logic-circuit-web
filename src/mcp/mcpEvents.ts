@@ -25,6 +25,9 @@ export const MCP_EVENT_PONG = "logic-circuit:mcp-pong";
 // HTTP-Basispfad der Bridge-Endpunkte
 export const MCP_HTTP_BASE_PATH = "/__mcp";
 
+// Standardisierter MCP-Streamable-HTTP-Endpunkt
+export const MCP_STREAMABLE_HTTP_PATH = "/mcp";
+
 // Öffentlicher JSON-Endpunkt für DSGVO-/Betreiberangaben aus Server-Umgebungsvariablen
 export const MCP_PRIVACY_PATH = `${MCP_HTTP_BASE_PATH}/privacy`;
 

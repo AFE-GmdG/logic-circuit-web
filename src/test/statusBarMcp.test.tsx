@@ -9,6 +9,7 @@ import SimulationContextProvider from "../contexts/simulationContext/provider";
 import type { McpBridgeController } from "../hooks/useMcpBridge";
 
 import {
+  buildLocalMcpConfigJson,
   buildRemoteChatPrompt,
   buildRemoteMcpConfigJson,
   clearMcpAccessKey,
@@ -51,26 +52,35 @@ function renderStatusBarWithMcp(controller: McpBridgeController, initialPopoverO
 }
 
 describe("mcpStorage & Prompt/Config-Generatoren", () => {
-  it("erzeugt den Chat-Prompt und die statische mcp_config.json ohne feste SessionID", () => {
+  it("erzeugt den Chat-Prompt und die Streamable-HTTP-mcp_config.json ohne CLI oder feste SessionID", () => {
     expect(buildRemoteChatPrompt("xxyy-aabb-1234-qwer")).toBe(
       "Nutze für Logic Circuit Anfragen folgende SessionID: xxyy-aabb-1234-qwer",
     );
 
-    const configNoKey = JSON.parse(buildRemoteMcpConfigJson("https://circuit.example.com", false)) as {
-      mcpServers: { "logic-circuit-remote": { env: Record<string, string> } };
+    const localConfig = JSON.parse(buildLocalMcpConfigJson(5173)) as {
+      mcpServers: { "logic-circuit": { url: string; command?: string; headers?: Record<string, string> } };
     };
-    expect(configNoKey.mcpServers["logic-circuit-remote"].env).toEqual({
-      LOGIC_CIRCUIT_URL: "https://circuit.example.com",
+    expect(localConfig.mcpServers["logic-circuit"]).toEqual({
+      url: "http://localhost:5173/mcp",
     });
 
-    const configWithKey = JSON.parse(buildRemoteMcpConfigJson("https://circuit.example.com", true)) as {
-      mcpServers: { "logic-circuit-remote": { env: Record<string, string> } };
+    const configNoKey = JSON.parse(buildRemoteMcpConfigJson("https://circuit.example.com/", false)) as {
+      mcpServers: { "logic-circuit": { url: string; command?: string; headers?: Record<string, string> } };
     };
-    expect(configWithKey.mcpServers["logic-circuit-remote"].env).toEqual({
-      LOGIC_CIRCUIT_URL: "https://circuit.example.com",
-      LOGIC_CIRCUIT_TOKEN: "<dein-access-key>",
+    expect(configNoKey.mcpServers["logic-circuit"]).toEqual({
+      url: "https://circuit.example.com/mcp",
     });
-    expect(configWithKey.mcpServers["logic-circuit-remote"].env.LOGIC_CIRCUIT_SESSION).toBeUndefined();
+    expect(configNoKey.mcpServers["logic-circuit"].command).toBeUndefined();
+
+    const configWithKey = JSON.parse(buildRemoteMcpConfigJson("https://circuit.example.com", true)) as {
+      mcpServers: { "logic-circuit": { url: string; headers?: Record<string, string> } };
+    };
+    expect(configWithKey.mcpServers["logic-circuit"]).toEqual({
+      url: "https://circuit.example.com/mcp",
+      headers: {
+        Authorization: "Bearer <dein-access-key>",
+      },
+    });
   });
 
   it("liest, speichert und löscht den Access-Key robust in localStorage", () => {
@@ -146,9 +156,7 @@ describe("StatusBar MCP-Anzeige & McpRemotePopover", () => {
         connectedTabCount={2}
         error="Test-Warnung"
         isSharedWorkerSupported
-        accessKey="geheim"
-        onAccessKeyChange={vi.fn()}
-        onClearAccessKey={vi.fn()}
+        onOpenSettings={vi.fn()}
         onConnect={vi.fn()}
         onDisconnect={vi.fn()}
         onActivateThisTab={vi.fn()}
@@ -159,7 +167,7 @@ describe("StatusBar MCP-Anzeige & McpRemotePopover", () => {
     expect(activeOtherHtml).toContain("Diesen Tab für MCP aktivieren");
     expect(activeOtherHtml).toContain("Test-Warnung");
 
-    const disconnectedWithKeyHtml = renderToStaticMarkup(
+    const disconnectedHtml = renderToStaticMarkup(
       <McpRemotePopover
         isOpen
         status="remote-off"
@@ -167,9 +175,7 @@ describe("StatusBar MCP-Anzeige & McpRemotePopover", () => {
         connectedTabCount={1}
         error={null}
         isSharedWorkerSupported
-        accessKey="geheim"
-        onAccessKeyChange={vi.fn()}
-        onClearAccessKey={vi.fn()}
+        onOpenSettings={vi.fn()}
         onConnect={vi.fn()}
         onDisconnect={vi.fn()}
         onActivateThisTab={vi.fn()}
@@ -177,8 +183,84 @@ describe("StatusBar MCP-Anzeige & McpRemotePopover", () => {
       />,
     );
 
-    expect(disconnectedWithKeyHtml).toContain("Löschen");
-    expect(disconnectedWithKeyHtml).toContain("Verbinden");
+    expect(disconnectedHtml).toContain("Verbinden");
+    expect(disconnectedHtml).toContain("data-testid=\"mcp-open-settings-btn\"");
+    expect(disconnectedHtml).toContain("Einstellungen…");
+    expect(disconnectedHtml).not.toContain("data-testid=\"mcp-sidecar-url-input\"");
+    expect(disconnectedHtml).not.toContain("id=\"mcp-remote-access-key\"");
+    expect(disconnectedHtml).not.toContain("IDE-Config anzeigen");
+
+    const missingRequiredUrlHtml = renderToStaticMarkup(
+      <McpRemotePopover
+        isOpen
+        status="remote-off"
+        sessionId={null}
+        connectedTabCount={1}
+        error={null}
+        isSharedWorkerSupported
+        sidecarUrl=""
+        customSidecarRequired
+        onOpenSettings={vi.fn()}
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onActivateThisTab={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(missingRequiredUrlHtml).toContain("data-testid=\"mcp-sidecar-required-hint\"");
+
+    // Versionsabweichungs-Banner & Sprung zum Download (ohne Einstellungs-Felder oder IDE-Config)
+    const customSidecarHtml = renderToStaticMarkup(
+      <McpRemotePopover
+        isOpen
+        status="remote-active-self"
+        sessionId="xxyy-aabb-1234-qwer"
+        connectedTabCount={1}
+        error={null}
+        isSharedWorkerSupported
+        sidecarUrl="http://localhost:3001"
+        customSidecarRequired
+        versionCheck={{
+          relation: "server-outdated",
+          isCompatible: false,
+          updateRecommended: true,
+          clientVersion: "1.2.0",
+          serverVersion: "1.1.0",
+        }}
+        onOpenSettings={vi.fn()}
+        onOpenSidecarDownload={vi.fn()}
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onActivateThisTab={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(customSidecarHtml).toContain("data-testid=\"mcp-version-banner\"");
+    expect(customSidecarHtml).toContain("data-testid=\"mcp-version-download-btn\"");
+    expect(customSidecarHtml).toContain("v1.1.0");
+    expect(customSidecarHtml).toContain("v1.2.0");
+    expect(customSidecarHtml).not.toContain("data-testid=\"mcp-sidecar-url-input\"");
+    expect(customSidecarHtml).not.toContain("IDE-Config anzeigen");
+
+    const invalidProtocolHtml = renderToStaticMarkup(
+      <McpRemotePopover
+        isOpen
+        status="remote-off"
+        sessionId={null}
+        connectedTabCount={1}
+        error={null}
+        isSharedWorkerSupported
+        sidecarUrl="ftp://ungueltig"
+        customSidecarRequired
+        onOpenSettings={vi.fn()}
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onActivateThisTab={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(invalidProtocolHtml).toContain("data-testid=\"mcp-sidecar-url-error\"");
   });
 
   it("blendet im MCP-freien Build (mode: 'disabled') sämtliche MCP-Statusleisten-Elemente und Popovers aus", () => {
@@ -197,5 +279,38 @@ describe("StatusBar MCP-Anzeige & McpRemotePopover", () => {
     expect(disabledHtml).not.toContain("data-component=\"McpRemotePopover\"");
     expect(disabledHtml).not.toContain("MCP (Lokal)");
     expect(disabledHtml).not.toContain("MCP: Aus");
+  });
+
+  it("sperrt MCP-Steuerung und Anzeige in StatusBar und McpRemotePopover bei aktivem isBlockedByCollab", () => {
+    const blockedStatusHtml = renderStatusBarWithMcp(
+      createController({
+        mode: "remote",
+        status: "remote-off",
+        isBlockedByCollab: true,
+      }),
+      true,
+    );
+    expect(blockedStatusHtml).toContain("data-mcp-blocked=\"true\"");
+    expect(blockedStatusHtml).toContain("MCP: Nur Host");
+    expect(blockedStatusHtml).toContain("data-testid=\"mcp-collab-blocked-hint\"");
+
+    const blockedPopoverHtml = renderToStaticMarkup(
+      <McpRemotePopover
+        isOpen
+        status="remote-active-other"
+        sessionId="sess-1"
+        connectedTabCount={2}
+        error={null}
+        isSharedWorkerSupported
+        isBlockedByCollab
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onActivateThisTab={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(blockedPopoverHtml).toContain("data-testid=\"mcp-collab-blocked-hint\"");
+    expect(blockedPopoverHtml).toContain("ausschließlich dem aktiven Session-Host vorbehalten");
+    expect(blockedPopoverHtml).toMatch(/class="claim-tab-btn"[^>]*disabled=""/);
   });
 });

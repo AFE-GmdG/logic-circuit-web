@@ -1,12 +1,23 @@
 import type CircuitProject from "../types/circuit/circuitProject";
 import type AppLanguage from "../types/settings/appLanguage";
 import type AppSettings from "../types/settings/appSettings";
+import type CollabCursorIdleTimeoutSec from "../types/settings/collabCursorIdleTimeout";
+import {
+  COLLAB_CURSOR_IDLE_TIMEOUT_OPTIONS,
+  DEFAULT_COLLAB_CURSOR_IDLE_TIMEOUT_SEC,
+} from "../types/settings/collabCursorIdleTimeout";
+import type CollabCursorVisibilityMode from "../types/settings/collabCursorVisibilityMode";
+import {
+  COLLAB_CURSOR_VISIBILITY_MODES,
+  DEFAULT_COLLAB_CURSOR_VISIBILITY_MODE,
+} from "../types/settings/collabCursorVisibilityMode";
 import type StartupProjectMode from "../types/settings/startupProjectMode";
 import type FrameRateLimit from "../types/simulation/frameRateLimit";
 
 import { AUTO_LANGUAGE, normalizeSupportedLanguage } from "../i18n";
 
 import { AUDIO_DEFAULT_VOLUME } from "./audioPitchTable";
+import { parseStunUrls } from "./collabIceConfig";
 import { CLOCK_FREQUENCY_STEPS } from "./simulationSpeed";
 
 export const APP_SETTINGS_STORAGE_KEY = "logicCircuit.app.settings";
@@ -44,6 +55,59 @@ function normalizeAudioVolume(value: unknown): number {
   return DEFAULT_APP_SETTINGS.audioVolume;
 }
 
+function normalizeCollabStunUrls(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const stringEntries = value.filter((item): item is string => typeof item === "string");
+  const parsed = parseStunUrls(stringEntries);
+  return parsed.validUrls.length > 0 ? parsed.validUrls : undefined;
+}
+
+// Prüft, ob ein Wert einer der festen Einzelauswahlen für die Cursor-Inaktivitätszeit entspricht
+export function normalizeCollabCursorIdleTimeoutSec(value: unknown): CollabCursorIdleTimeoutSec | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return undefined;
+  }
+  return (COLLAB_CURSOR_IDLE_TIMEOUT_OPTIONS as readonly number[]).includes(value)
+    ? (value as CollabCursorIdleTimeoutSec)
+    : undefined;
+}
+
+// Liefert die wirksame Cursor-Ausblendzeit in Sekunden mit Fallback auf den Standardwert (10 s)
+export function resolveCollabCursorIdleTimeoutSec(value: unknown): CollabCursorIdleTimeoutSec {
+  return normalizeCollabCursorIdleTimeoutSec(value) ?? DEFAULT_COLLAB_CURSOR_IDLE_TIMEOUT_SEC;
+}
+
+// Prüft, ob ein Wert einem der gültigen Cursor-Sichtbarkeitsmodi entspricht
+export function normalizeCollabCursorVisibilityMode(value: unknown): CollabCursorVisibilityMode | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return (COLLAB_CURSOR_VISIBILITY_MODES as readonly string[]).includes(value)
+    ? (value as CollabCursorVisibilityMode)
+    : undefined;
+}
+
+// Liefert den wirksamen Cursor-Sichtbarkeitsmodus mit Fallback auf "all"
+export function resolveCollabCursorVisibilityMode(value: unknown): CollabCursorVisibilityMode {
+  return normalizeCollabCursorVisibilityMode(value) ?? DEFAULT_COLLAB_CURSOR_VISIBILITY_MODE;
+}
+
+// Liefert den i18n-Übersetzungsschlüssel für einen Cursor-Sichtbarkeitsmodus
+export function getCursorVisibilityModeTranslationKey(mode: CollabCursorVisibilityMode): string {
+  switch (mode) {
+    case "all":
+      return "dialog.options.collabCursorVisibilityModes.all";
+    case "collaborators-and-raised-hand":
+      return "dialog.options.collabCursorVisibilityModes.collaboratorsAndRaisedHand";
+    case "collaborators":
+      return "dialog.options.collabCursorVisibilityModes.collaborators";
+    case "raised-hand":
+      return "dialog.options.collabCursorVisibilityModes.raisedHand";
+  }
+}
+
 // Lädt globale Anwendungseinstellungen robust aus localStorage mit Fallback auf Standardwerte
 export function loadAppSettings(storageKey = APP_SETTINGS_STORAGE_KEY): AppSettings {
   if (typeof window === "undefined" || !window.localStorage) {
@@ -62,6 +126,9 @@ export function loadAppSettings(storageKey = APP_SETTINGS_STORAGE_KEY): AppSetti
     }
 
     const record = parsed as Record<string, unknown>;
+    const collabStunUrls = normalizeCollabStunUrls(record.collabStunUrls);
+    const collabCursorIdleTimeoutSec = normalizeCollabCursorIdleTimeoutSec(record.collabCursorIdleTimeoutSec);
+    const collabCursorVisibilityMode = normalizeCollabCursorVisibilityMode(record.collabCursorVisibilityMode);
     return {
       startupProjectMode: isValidStartupProjectMode(record.startupProjectMode)
         ? record.startupProjectMode
@@ -75,6 +142,9 @@ export function loadAppSettings(storageKey = APP_SETTINGS_STORAGE_KEY): AppSetti
         typeof record.audioMuted === "boolean"
           ? record.audioMuted
           : DEFAULT_APP_SETTINGS.audioMuted,
+      ...(collabStunUrls ? { collabStunUrls } : {}),
+      ...(collabCursorIdleTimeoutSec !== undefined ? { collabCursorIdleTimeoutSec } : {}),
+      ...(collabCursorVisibilityMode !== undefined ? { collabCursorVisibilityMode } : {}),
     };
   } catch {
     return { ...DEFAULT_APP_SETTINGS };
@@ -91,7 +161,20 @@ export function saveAppSettings(
   }
 
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify(settings));
+    const collabStunUrls = normalizeCollabStunUrls(settings.collabStunUrls);
+    const collabCursorIdleTimeoutSec = normalizeCollabCursorIdleTimeoutSec(settings.collabCursorIdleTimeoutSec);
+    const collabCursorVisibilityMode = normalizeCollabCursorVisibilityMode(settings.collabCursorVisibilityMode);
+    const payload: AppSettings = {
+      startupProjectMode: settings.startupProjectMode,
+      defaultFrequency: settings.defaultFrequency,
+      language: settings.language,
+      audioVolume: settings.audioVolume,
+      audioMuted: settings.audioMuted,
+      ...(collabStunUrls ? { collabStunUrls } : {}),
+      ...(collabCursorIdleTimeoutSec !== undefined ? { collabCursorIdleTimeoutSec } : {}),
+      ...(collabCursorVisibilityMode !== undefined ? { collabCursorVisibilityMode } : {}),
+    };
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
   } catch {
     // Speicherfehler (z. B. Private Mode oder Quota) still ignorieren
   }

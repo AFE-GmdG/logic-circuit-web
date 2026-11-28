@@ -3,8 +3,10 @@ import React from "react";
 import styled from "@emotion/styled";
 import { useTranslation } from "react-i18next";
 
-import CanvasContext from "../../contexts/canvasContext";
+import CanvasContext, { type CanvasCenterFocusTarget } from "../../contexts/canvasContext";
 import CircuitContext from "../../contexts/circuitContext";
+import CollabContext from "../../contexts/collabContext";
+import LibraryContext from "../../contexts/libraryContext";
 import SimulationContext from "../../contexts/simulationContext";
 import useCircuitCleanUpAnalysis from "../../hooks/useCircuitCleanUpAnalysis";
 
@@ -24,10 +26,14 @@ import type RotationDirection from "../../types/circuit/rotationDirection";
 import type TextNote from "../../types/circuit/textNote";
 import type Wire from "../../types/circuit/wire";
 import type WireEndpointUpdate from "../../types/circuit/wireEndpointUpdate";
+import type { CollabSoftLockEntry, CollabSoftLockTargetType } from "../../types/collab/modelSyncMessage";
+import type { CollabPresenceOpenDialog } from "../../types/collab/presenceMessage";
+import type CollabRemoteSelectionOwner from "../../types/collab/remoteEntityHighlight";
 import type FindResult from "../../types/find/findResult";
 import type PropertyChange from "../../types/history/propertyChange";
 import { STATE_OFF, STATE_ON0, STATE_ON1 } from "../../types/simulation/state";
 
+import type { CollabSoftLockTarget } from "../../collab/collabSoftLockManager";
 import {
   getButtonInstanceId,
   getGraphicsArrayInstanceId,
@@ -38,6 +44,7 @@ import type CircuitMap from "../../simulation/compiler/circuitMap";
 import {
   BUTTON_MAX_GRID_SIZE,
   BUTTON_MIN_GRID_SIZE,
+  createCircuitSymbol,
   doBoundingBoxesIntersect,
   getComponentLayout,
   getSymbolGridBoundingBox,
@@ -60,9 +67,11 @@ import {
   setInMemoryClipboardText,
   writeClipboardText,
 } from "../../utils/clipboardUtils";
+import { pickAutoParticipantColor } from "../../utils/collabParticipantColors";
 import {
   calculateZoomAtPoint,
   canvasToGrid,
+  clampZoom,
   DEFAULT_ZOOM,
   GRID_SIZE,
   screenToCanvas,
@@ -77,6 +86,7 @@ import {
   isSupportedProjectFile,
   readProjectFileText,
 } from "../../utils/storage/projectFileUtils";
+import { getHydratedNativeCircuitsMap } from "../../utils/subCircuitPreview";
 import {
   findJamAt,
   findJamNear,
@@ -93,6 +103,7 @@ import {
 import CanvasContextMenu, { type CanvasContextTarget } from "./canvasContextMenu";
 import CanvasGrid from "./canvasGrid";
 import CircuitSymbolView, { CLEANUP_DIM_OPACITY } from "./circuitSymbolView";
+import CollabCursorOverlay from "./collabCursorOverlay";
 import FindBar from "./findBar";
 import FloatingPasteLayer from "./floatingPasteLayer";
 import SelectionBox from "./selectionBox";
@@ -342,7 +353,7 @@ export function dispatchSimulationSymbolDoubleClick(params: {
   return false;
 }
 
-const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
+const CircuitCanvas = styled(({ className, ...other }: CircuitCanvasProps) => {
   const { t, i18n: i18nInstance } = useTranslation();
   const {
     viewport,
@@ -356,6 +367,8 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     registerClipboardActions,
     registerSelectAllAction,
     registerFocusGridPoint,
+    registerFocusCanvasCenter,
+    notifyUserViewportInteraction,
     registerOpenFindBar,
   } = React.useContext(CanvasContext);
   const {
@@ -392,9 +405,239 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     recordDelta,
     activePaletteDrag,
     hasUnsavedChanges,
+    importLibraryCircuit,
     importProjectFromText,
     isCleanUpVisualizationEnabled = false,
   } = React.useContext(CircuitContext);
+  const libraryContext = React.useContext(LibraryContext);
+  const isEditingLibrary = libraryContext?.isEditingLibrary ?? false;
+  const collabContext = React.useContext(CollabContext);
+  const isCollabInSharedProject = Boolean(collabContext?.isInSession && !isEditingLibrary);
+  const isCollabReadOnly = Boolean(isCollabInSharedProject && collabContext?.modelSyncState?.isReadOnlyForGuest);
+  const isCollabQuiesced = Boolean(isCollabInSharedProject && collabContext?.modelSyncState?.isQuiesced);
+  const isCollabMutationBlocked = isCollabReadOnly || isCollabQuiesced;
+  const isCollabNonHost = Boolean(isCollabInSharedProject && !collabContext?.isHost);
+
+  const foreignLockMaps = React.useMemo(
+    () => {
+      const symbolMap = new Map<string, CollabSoftLockEntry>();
+      const noteMap = new Map<string, CollabSoftLockEntry>();
+      if (!isCollabInSharedProject) {
+        return { symbolMap, noteMap };
+      }
+      const locks = collabContext?.modelSyncState?.softLocks ?? [];
+      for (const lock of locks) {
+        if (lock.ownerPeerId === collabContext?.selfPeerId) {
+          continue;
+        }
+        if (lock.targetType === "symbol") {
+          symbolMap.set(lock.targetId, lock);
+        } else if (lock.targetType === "textNote") {
+          noteMap.set(lock.targetId, lock);
+        }
+      }
+      return { symbolMap, noteMap };
+    },
+    [
+      collabContext?.modelSyncState?.softLocks,
+      collabContext?.selfPeerId,
+      isCollabInSharedProject,
+    ],
+  );
+  const foreignSymbolLockMap = foreignLockMaps.symbolMap;
+  const foreignNoteLockMap = foreignLockMaps.noteMap;
+
+  const foreignSelectionMaps = React.useMemo(
+    () => {
+      const symbolMap = new Map<string, CollabRemoteSelectionOwner[]>();
+      const noteMap = new Map<string, CollabRemoteSelectionOwner[]>();
+      const wireMap = new Map<string, CollabRemoteSelectionOwner[]>();
+      if (!isCollabInSharedProject || !collabContext?.presenceState) {
+        return { symbolMap, noteMap, wireMap };
+      }
+
+      const addOwner = (
+        map: Map<string, CollabRemoteSelectionOwner[]>,
+        id: string,
+        owner: CollabRemoteSelectionOwner,
+      ) => {
+        const list = map.get(id);
+        if (!list) {
+          map.set(id, [owner]);
+          return;
+        }
+        const existing = list.find((item) => item.peerId === owner.peerId);
+        if (existing) {
+          if (owner.hasOpenDialog) {
+            existing.hasOpenDialog = true;
+          }
+          return;
+        }
+        list.push(owner);
+      };
+
+      for (const peer of Object.values(collabContext.presenceState.peers)) {
+        if (peer.peerId === collabContext.selfPeerId || peer.inLibraryMode) {
+          continue;
+        }
+        if (peer.logicalCircuitId !== currentCircuit.logicalCircuitId) {
+          continue;
+        }
+
+        const participant = collabContext.participants.find((p) => p.peerId === peer.peerId);
+        const displayName = participant?.displayName ?? peer.peerId;
+        const color = collabContext.getParticipantColor?.(peer.peerId, displayName)
+          ?? pickAutoParticipantColor(new Set(), displayName);
+        const openDialog = peer.openDialog;
+
+        for (const symbolId of peer.selection.symbolIds) {
+          addOwner(symbolMap, symbolId, {
+            peerId: peer.peerId,
+            displayName,
+            color,
+            ...(openDialog?.kind === "symbol-properties" && openDialog.targetId === symbolId
+              ? { hasOpenDialog: true }
+              : {}),
+          });
+        }
+        if (
+          openDialog?.kind === "symbol-properties" &&
+          openDialog.logicalCircuitId === currentCircuit.logicalCircuitId
+        ) {
+          addOwner(symbolMap, openDialog.targetId, {
+            peerId: peer.peerId,
+            displayName,
+            color,
+            hasOpenDialog: true,
+          });
+        }
+
+        for (const textNoteId of peer.selection.textNoteIds) {
+          addOwner(noteMap, textNoteId, {
+            peerId: peer.peerId,
+            displayName,
+            color,
+            ...(openDialog?.kind === "text-note" && openDialog.targetId === textNoteId
+              ? { hasOpenDialog: true }
+              : {}),
+          });
+        }
+        if (
+          openDialog?.kind === "text-note" &&
+          openDialog.logicalCircuitId === currentCircuit.logicalCircuitId
+        ) {
+          addOwner(noteMap, openDialog.targetId, {
+            peerId: peer.peerId,
+            displayName,
+            color,
+            hasOpenDialog: true,
+          });
+        }
+
+        for (const wireId of peer.selection.wireIds) {
+          addOwner(wireMap, wireId, {
+            peerId: peer.peerId,
+            displayName,
+            color,
+          });
+        }
+      }
+
+      return { symbolMap, noteMap, wireMap };
+    },
+    [
+      collabContext?.getParticipantColor,
+      collabContext?.participantColors,
+      collabContext?.participants,
+      collabContext?.presenceState,
+      collabContext?.selfPeerId,
+      currentCircuit.logicalCircuitId,
+      isCollabInSharedProject,
+    ],
+  );
+  const foreignSymbolSelectionMap = foreignSelectionMaps.symbolMap;
+  const foreignNoteSelectionMap = foreignSelectionMaps.noteMap;
+  const foreignWireSelectionMap = foreignSelectionMaps.wireMap;
+
+  const findFirstForeignLock = React.useCallback(
+    (symbolIds: ReadonlyArray<string>, textNoteIds: ReadonlyArray<string>): CollabSoftLockEntry | null => {
+      for (const symbolId of symbolIds) {
+        const lock = foreignSymbolLockMap.get(symbolId);
+        if (lock) {
+          return lock;
+        }
+      }
+      for (const noteId of textNoteIds) {
+        const lock = foreignNoteLockMap.get(noteId);
+        if (lock) {
+          return lock;
+        }
+      }
+      return null;
+    },
+    [foreignNoteLockMap, foreignSymbolLockMap],
+  );
+
+  const activeCanvasLockTargetsRef = React.useRef<
+    Array<{ targetType: CollabSoftLockTargetType; targetId: string }>
+  >([]);
+  const collabAcquireSoftLocks = collabContext?.acquireSoftLocks;
+  const collabReleaseSoftLocks = collabContext?.releaseSoftLocks;
+  const collabReportSoftLockBlocked = collabContext?.reportSoftLockBlocked;
+
+  const releaseCanvasSoftLocks = React.useCallback(
+    () => {
+      if (activeCanvasLockTargetsRef.current.length === 0) {
+        return;
+      }
+      const toRelease = activeCanvasLockTargetsRef.current;
+      activeCanvasLockTargetsRef.current = [];
+      collabReleaseSoftLocks?.(toRelease);
+    },
+    [collabReleaseSoftLocks],
+  );
+
+  const acquireCanvasSoftLocks = React.useCallback(
+    (targets: CollabSoftLockTarget[]): boolean => {
+      if (!isCollabInSharedProject || targets.length === 0) {
+        return true;
+      }
+      const blockingLock = findFirstForeignLock(
+        targets.filter((target) => target.targetType === "symbol").map((target) => target.targetId),
+        targets.filter((target) => target.targetType === "textNote").map((target) => target.targetId),
+      );
+      if (blockingLock) {
+        collabReportSoftLockBlocked?.(blockingLock);
+        return false;
+      }
+      const result = collabAcquireSoftLocks?.(targets, "drag");
+      if (result && !result.ok) {
+        const firstConflict = result.blockedBy[0];
+        if (firstConflict) {
+          collabReportSoftLockBlocked?.(firstConflict);
+        }
+        return false;
+      }
+      activeCanvasLockTargetsRef.current = targets.map((target) => ({
+        targetType: target.targetType,
+        targetId: target.targetId,
+      }));
+      return true;
+    },
+    [
+      collabAcquireSoftLocks,
+      collabReportSoftLockBlocked,
+      findFirstForeignLock,
+      isCollabInSharedProject,
+    ],
+  );
+
+  React.useEffect(
+    () => () => {
+      releaseCanvasSoftLocks();
+    },
+    [releaseCanvasSoftLocks],
+  );
   const {
     isSimulating,
     wireStateMap,
@@ -441,6 +684,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
   const latestViewportRef = React.useRef(viewport);
   latestViewportRef.current = viewport;
   const pendingFocusRef = React.useRef<{ circuitId: string; point: GridPoint } | null>(null);
+  const pendingCanvasFocusRef = React.useRef<CanvasCenterFocusTarget | null>(null);
   const [contextTarget, setContextTarget] = React.useState<CanvasContextTarget | null>(null);
 
   const computeCenteredViewport = React.useCallback(
@@ -458,13 +702,39 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     [],
   );
 
+  const computeCenteredCanvasViewport = React.useCallback(
+    (centerX: number, centerY: number, zoom: number): ViewportTransform => {
+      const container = containerRef.current;
+      const rect = container?.getBoundingClientRect();
+      const width = rect && rect.width > 0 ? rect.width : 800;
+      const height = rect && rect.height > 0 ? rect.height : 600;
+      const clampedZoom = clampZoom(zoom);
+      return {
+        zoom: clampedZoom,
+        panX: width / 2 - centerX * clampedZoom,
+        panY: height / 2 - centerY * clampedZoom,
+      };
+    },
+    [],
+  );
+
   // Speichert und restauriert Zoom und Pan pro Schaltung bei Schaltungswechsel
   React.useEffect(
     () => {
       if (activeCircuitIdRef.current !== currentCircuit.logicalCircuitId) {
         circuitViewportsRef.current.set(activeCircuitIdRef.current, latestViewportRef.current);
         const savedViewport = circuitViewportsRef.current.get(currentCircuit.logicalCircuitId);
-        if (pendingFocusRef.current && pendingFocusRef.current.circuitId === currentCircuit.logicalCircuitId) {
+        if (pendingCanvasFocusRef.current && pendingCanvasFocusRef.current.circuitId === currentCircuit.logicalCircuitId) {
+          const target = pendingCanvasFocusRef.current;
+          pendingCanvasFocusRef.current = null;
+          setViewport(
+            computeCenteredCanvasViewport(
+              target.centerX,
+              target.centerY,
+              target.zoom ?? latestViewportRef.current.zoom,
+            ),
+          );
+        } else if (pendingFocusRef.current && pendingFocusRef.current.circuitId === currentCircuit.logicalCircuitId) {
           const targetPoint = pendingFocusRef.current.point;
           pendingFocusRef.current = null;
           setViewport(computeCenteredViewport(targetPoint, latestViewportRef.current.zoom));
@@ -501,11 +771,14 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         setFloatingPaste(null);
         setClipboardNotice(null);
         setContextTarget(null);
+        releaseCanvasSoftLocks();
       }
     },
     [
+      computeCenteredCanvasViewport,
       computeCenteredViewport,
       currentCircuit.logicalCircuitId,
+      releaseCanvasSoftLocks,
       setViewport,
     ],
   );
@@ -558,6 +831,98 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
   } | null>(null);
   const [isFindBarOpen, setIsFindBarOpen] = React.useState(false);
   const [findBarFocusSignal, setFindBarFocusSignal] = React.useState(0);
+
+  const collabIsInSession = Boolean(collabContext?.isInSession);
+  const collabUpdateLocalPresenceState = collabContext?.updateLocalPresenceState;
+  const collabUpdateLocalPresenceCursor = collabContext?.updateLocalPresenceCursor;
+
+  const localOpenDialog = React.useMemo<CollabPresenceOpenDialog | null>(
+    () => {
+      if (editingSymbol) {
+        return {
+          kind: "symbol-properties",
+          targetId: editingSymbol.circuitSymbolId,
+          logicalCircuitId: currentCircuit.logicalCircuitId,
+        };
+      }
+      if (editingTextNote) {
+        return {
+          kind: "text-note",
+          targetId: editingTextNote.textNoteId,
+          logicalCircuitId: currentCircuit.logicalCircuitId,
+        };
+      }
+      if (editingCircuit) {
+        return {
+          kind: "circuit-properties",
+          targetId: editingCircuit.logicalCircuitId,
+          logicalCircuitId: editingCircuit.logicalCircuitId,
+        };
+      }
+      return null;
+    },
+    [
+      currentCircuit.logicalCircuitId,
+      editingCircuit,
+      editingSymbol,
+      editingTextNote,
+    ],
+  );
+
+  // Veröffentlicht lokalen Schaltplan-, Selektions-, Dialog- und Bibliotheks-Status in den Präsenz-Kanal
+  React.useEffect(
+    () => {
+      if (!collabIsInSession || !collabUpdateLocalPresenceState) {
+        return;
+      }
+      collabUpdateLocalPresenceState({
+        logicalCircuitId: currentCircuit.logicalCircuitId,
+        inLibraryMode: isEditingLibrary,
+        selection: {
+          symbolIds: selectedSymbolIds,
+          textNoteIds: selectedTextNoteIds,
+          wireIds: selectedWireIds,
+        },
+        openDialog: localOpenDialog,
+      });
+    },
+    [
+      collabIsInSession,
+      collabUpdateLocalPresenceState,
+      currentCircuit.logicalCircuitId,
+      isEditingLibrary,
+      localOpenDialog,
+      selectedSymbolIds,
+      selectedTextNoteIds,
+      selectedWireIds,
+    ],
+  );
+
+  // Veröffentlicht den eigenen Viewport-Mittelpunkt und Zoom gedrosselt (nur außerhalb des Bibliotheksmodus)
+  React.useEffect(
+    () => {
+      if (!collabIsInSession || !collabUpdateLocalPresenceState || isEditingLibrary) {
+        return;
+      }
+      const rect = containerRef.current?.getBoundingClientRect();
+      const width = rect && rect.width > 0 ? rect.width : 800;
+      const height = rect && rect.height > 0 ? rect.height : 600;
+      const center = screenToCanvas({ x: width / 2, y: height / 2 }, viewport);
+      collabUpdateLocalPresenceState({
+        viewport: {
+          centerX: center.x,
+          centerY: center.y,
+          zoom: viewport.zoom,
+        },
+      });
+    },
+    [
+      collabIsInSession,
+      collabUpdateLocalPresenceState,
+      isEditingLibrary,
+      viewport,
+    ],
+  );
 
   // Berechnet Bitbreiten-Validierung und rote Fehler-Indikatorkreise für die aktive Schaltung
   const wireValidation = React.useMemo(
@@ -648,12 +1013,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         setIsFindBarOpen(false);
         floatingDragRef.current = null;
         setFloatingPaste(null);
+        releaseCanvasSoftLocks();
       } else {
         setInspectingMemory(null);
         setInspectingProbe(null);
       }
     },
-    [isSimulating],
+    [isSimulating, releaseCanvasSoftLocks],
   );
 
   const getVisibleViewportBoundsGrid = React.useCallback(
@@ -698,10 +1064,15 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     (): boolean => {
       const currentFloating = floatingPasteRef.current;
       if (!currentFloating) {
+        releaseCanvasSoftLocks();
         return false;
       }
       floatingDragRef.current = null;
       setFloatingPaste(null);
+      releaseCanvasSoftLocks();
+      if (isCollabMutationBlocked) {
+        return false;
+      }
       if (currentFloating.mode === "move" && currentFloating.moveMeta) {
         if (commitFloatingMove) {
           commitFloatingMove(currentFloating);
@@ -726,7 +1097,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     [
       commitFloatingMove,
       commitPastePayload,
+      isCollabMutationBlocked,
       moveEntities,
+      releaseCanvasSoftLocks,
     ],
   );
 
@@ -734,8 +1107,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     () => {
       floatingDragRef.current = null;
       setFloatingPaste(null);
+      releaseCanvasSoftLocks();
     },
-    [],
+    [releaseCanvasSoftLocks],
   );
 
   const moveFloatingPaste = React.useCallback(
@@ -823,6 +1197,14 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
   const cutSelectionToClipboard = React.useCallback(
     async (): Promise<boolean> => {
+      if (isCollabMutationBlocked) {
+        return false;
+      }
+      const blockingLock = findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds);
+      if (blockingLock) {
+        collabContext?.reportSoftLockBlocked?.(blockingLock);
+        return false;
+      }
       const copied = await copySelectionToClipboard();
       if (!copied) {
         return false;
@@ -835,7 +1217,10 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     },
     [
       cancelFloatingPaste,
+      collabContext,
       copySelectionToClipboard,
+      findFirstForeignLock,
+      isCollabMutationBlocked,
       removeEntities,
       selectedSymbolIds,
       selectedTextNoteIds,
@@ -845,7 +1230,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
   const startFloatingPasteFromText = React.useCallback(
     (rawText: string, anchorGridPoint?: GridPoint | null) => {
-      if (isSimulating) {
+      if (isSimulating || isCollabMutationBlocked) {
         return;
       }
 
@@ -899,6 +1284,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       commitFloatingPaste,
       currentCircuit,
       getVisibleViewportBoundsGrid,
+      isCollabMutationBlocked,
       isSimulating,
       project,
       selectEntities,
@@ -909,13 +1295,17 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
   const pasteFromClipboard = React.useCallback(
     async (anchorGridPoint?: GridPoint | null) => {
-      if (isSimulating) {
+      if (isSimulating || isCollabMutationBlocked) {
         return;
       }
       const text = await readClipboardText();
       startFloatingPasteFromText(text, anchorGridPoint);
     },
-    [isSimulating, startFloatingPasteFromText],
+    [
+      isCollabMutationBlocked,
+      isSimulating,
+      startFloatingPasteFromText,
+    ],
   );
 
   const selectAllElements = React.useCallback(
@@ -951,6 +1341,24 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       setViewport(computeCenteredViewport(point, latestViewportRef.current.zoom));
     },
     [computeCenteredViewport, setViewport],
+  );
+
+  const focusCanvasCenter = React.useCallback(
+    (target: CanvasCenterFocusTarget) => {
+      if (target.circuitId && target.circuitId !== activeCircuitIdRef.current) {
+        pendingCanvasFocusRef.current = target;
+        return;
+      }
+      pendingCanvasFocusRef.current = null;
+      setViewport(
+        computeCenteredCanvasViewport(
+          target.centerX,
+          target.centerY,
+          target.zoom ?? latestViewportRef.current.zoom,
+        ),
+      );
+    },
+    [computeCenteredCanvasViewport, setViewport],
   );
 
   const handleInsertPlainTextAsNote = React.useCallback(
@@ -1016,6 +1424,16 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       };
     },
     [focusGridPoint, registerFocusGridPoint],
+  );
+
+  React.useEffect(
+    () => {
+      registerFocusCanvasCenter?.(focusCanvasCenter);
+      return () => {
+        registerFocusCanvasCenter?.(null);
+      };
+    },
+    [focusCanvasCenter, registerFocusCanvasCenter],
   );
 
   const handleOpenFindBar = React.useCallback(
@@ -1170,8 +1588,18 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         if (isCanvasClipboardDisabled() || isTargetInteractiveInput(event.target)) {
           return;
         }
+        if (isCut && isCollabMutationBlocked) {
+          return;
+        }
         if (window.getSelection()?.toString()) {
           return;
+        }
+        if (isCut) {
+          const blockingLock = findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds);
+          if (blockingLock) {
+            collabContext?.reportSoftLockBlocked?.(blockingLock);
+            return;
+          }
         }
         const hasSelection =
           selectedSymbolIds.length > 0 ||
@@ -1202,7 +1630,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       const handleWindowCut = (event: ClipboardEvent) => handleWindowCopyOrCut(event, true);
 
       const handleWindowPaste = (event: ClipboardEvent) => {
-        if (isCanvasClipboardDisabled() || isTargetInteractiveInput(event.target)) {
+        if (isCanvasClipboardDisabled() || isCollabMutationBlocked || isTargetInteractiveInput(event.target)) {
           return;
         }
 
@@ -1225,10 +1653,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       };
     },
     [
+      collabContext,
       currentCircuit,
       editingCircuit,
       editingSymbol,
       editingTextNote,
+      findFirstForeignLock,
+      isCollabMutationBlocked,
       isSimulating,
       pasteFromClipboard,
       project,
@@ -1351,6 +1782,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
             return;
           }
           if ((event.code === "KeyX" || keyLower === "x") && !event.altKey) {
+            if (isCollabMutationBlocked) {
+              return;
+            }
             const hasSelection =
               selectedSymbolIds.length > 0 ||
               selectedTextNoteIds.length > 0 ||
@@ -1362,6 +1796,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
             return;
           }
           if ((event.code === "KeyZ" || keyLower === "z") && !event.shiftKey) {
+            if (isCollabMutationBlocked) {
+              return;
+            }
             event.preventDefault();
             if (floatingPasteRef.current !== null) {
               cancelFloatingPaste();
@@ -1375,6 +1812,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
             keyLower === "y" ||
             ((event.code === "KeyZ" || keyLower === "z") && event.shiftKey)
           ) {
+            if (isCollabMutationBlocked) {
+              return;
+            }
             event.preventDefault();
             redo();
             return;
@@ -1432,6 +1872,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
         // Erste Pfeiltaste aktiviert den Schwebemodus, um vorzeitige Leitungsverknüpfungen zu vermeiden (1 Undo bei Ablegen)
         if (
+          !isCollabMutationBlocked &&
           floatingPasteRef.current === null &&
           contextTarget === null &&
           !event.ctrlKey &&
@@ -1448,6 +1889,21 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
             selectedWireIds.length > 0;
           if (hasSelection) {
             event.preventDefault();
+            const lockTargets: CollabSoftLockTarget[] = [
+              ...selectedSymbolIds.map((symbolId) => ({
+                targetType: "symbol" as const,
+                targetId: symbolId,
+                logicalCircuitId: currentCircuit.logicalCircuitId,
+              })),
+              ...selectedTextNoteIds.map((textNoteId) => ({
+                targetType: "textNote" as const,
+                targetId: textNoteId,
+                logicalCircuitId: currentCircuit.logicalCircuitId,
+              })),
+            ];
+            if (!acquireCanvasSoftLocks(lockTargets)) {
+              return;
+            }
             const dx = event.code === "ArrowLeft" ? -1 : event.code === "ArrowRight" ? 1 : 0;
             const dy = event.code === "ArrowUp" ? -1 : event.code === "ArrowDown" ? 1 : 0;
             const nextFloating = createFloatingMoveState(currentCircuit, {
@@ -1462,29 +1918,51 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
               setClipboardNotice(null);
               setWirePledge(null);
               setFloatingPaste(nextFloating);
+            } else {
+              releaseCanvasSoftLocks();
             }
             return;
           }
         }
 
-        if (event.code === "Delete" || event.code === "Backspace") {
+        if (!isCollabMutationBlocked && (event.code === "Delete" || event.code === "Backspace")) {
           const hasSymbols = selectedSymbolIds.length > 0;
           const hasNotes = selectedTextNoteIds.length > 0;
           const hasWires = selectedWireIds.length > 0;
           if (hasSymbols || hasNotes || hasWires) {
             event.preventDefault();
+            const blockingLock = findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds);
+            if (blockingLock) {
+              collabContext?.reportSoftLockBlocked?.(blockingLock);
+              return;
+            }
             removeEntities(selectedSymbolIds, selectedTextNoteIds, selectedWireIds);
           }
         }
 
         // Erstes R / Shift+R / L aktiviert den Schwebemodus, damit Leitungsverknüpfungen erst beim Ablegen entstehen
-        if ((event.code === "KeyR" || event.key.toLowerCase() === "r") && !event.ctrlKey && !event.metaKey) {
+        if (!isCollabMutationBlocked && (event.code === "KeyR" || event.key.toLowerCase() === "r") && !event.ctrlKey && !event.metaKey) {
           const hasSelection =
             selectedSymbolIds.length > 0 ||
             selectedTextNoteIds.length > 0 ||
             selectedWireIds.length > 0;
           if (hasSelection) {
             event.preventDefault();
+            const lockTargets: CollabSoftLockTarget[] = [
+              ...selectedSymbolIds.map((symbolId) => ({
+                targetType: "symbol" as const,
+                targetId: symbolId,
+                logicalCircuitId: currentCircuit.logicalCircuitId,
+              })),
+              ...selectedTextNoteIds.map((textNoteId) => ({
+                targetType: "textNote" as const,
+                targetId: textNoteId,
+                logicalCircuitId: currentCircuit.logicalCircuitId,
+              })),
+            ];
+            if (!acquireCanvasSoftLocks(lockTargets)) {
+              return;
+            }
             const direction: RotationDirection = event.shiftKey ? "counterClockwise" : "clockwise";
             const nextFloating = createFloatingMoveState(currentCircuit, {
               symbolIds: selectedSymbolIds,
@@ -1499,18 +1977,35 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
               setClipboardNotice(null);
               setWirePledge(null);
               setFloatingPaste(nextFloating);
+            } else {
+              releaseCanvasSoftLocks();
             }
             return;
           }
         }
 
-        if ((event.code === "KeyL" || event.key.toLowerCase() === "l") && !event.ctrlKey && !event.metaKey) {
+        if (!isCollabMutationBlocked && (event.code === "KeyL" || event.key.toLowerCase() === "l") && !event.ctrlKey && !event.metaKey) {
           const hasSelection =
             selectedSymbolIds.length > 0 ||
             selectedTextNoteIds.length > 0 ||
             selectedWireIds.length > 0;
           if (hasSelection) {
             event.preventDefault();
+            const lockTargets: CollabSoftLockTarget[] = [
+              ...selectedSymbolIds.map((symbolId) => ({
+                targetType: "symbol" as const,
+                targetId: symbolId,
+                logicalCircuitId: currentCircuit.logicalCircuitId,
+              })),
+              ...selectedTextNoteIds.map((textNoteId) => ({
+                targetType: "textNote" as const,
+                targetId: textNoteId,
+                logicalCircuitId: currentCircuit.logicalCircuitId,
+              })),
+            ];
+            if (!acquireCanvasSoftLocks(lockTargets)) {
+              return;
+            }
             const nextFloating = createFloatingMoveState(currentCircuit, {
               symbolIds: selectedSymbolIds,
               textNoteIds: selectedTextNoteIds,
@@ -1524,6 +2019,8 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
               setClipboardNotice(null);
               setWirePledge(null);
               setFloatingPaste(nextFloating);
+            } else {
+              releaseCanvasSoftLocks();
             }
             return;
           }
@@ -1583,17 +2080,28 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       };
     },
     [
+      acquireCanvasSoftLocks,
+      cancelFloatingPaste,
+      clipboardNotice,
+      collabContext,
+      commitFloatingPaste,
+      contextTarget,
+      copySelectionToClipboard,
       currentCircuit,
+      cutSelectionToClipboard,
       editingCircuit,
       editingSymbol,
       editingTextNote,
+      findFirstForeignLock,
       handleOpenCircuitProperties,
       handleOpenSymbolProperties,
       handleOpenTextNoteEditor,
+      isCollabMutationBlocked,
       isFindBarOpen,
       isSimulating,
       moveFloatingPaste,
       redo,
+      releaseCanvasSoftLocks,
       removeEntities,
       rotateFloatingPaste,
       selectAllElements,
@@ -1602,12 +2110,6 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       selectedWireIds,
       undo,
       wirePledge,
-      cancelFloatingPaste,
-      clipboardNotice,
-      commitFloatingPaste,
-      contextTarget,
-      copySelectionToClipboard,
-      cutSelectionToClipboard,
     ],
   );
 
@@ -1621,6 +2123,25 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       targetWireIds: string[],
       clickedInfo?: { symbolId?: string; noteId?: string; wireId?: string },
     ) => {
+      if (isCollabMutationBlocked) {
+        return;
+      }
+      const lockTargets: CollabSoftLockTarget[] = [
+        ...targetSymbolIds.map((symbolId) => ({
+          targetType: "symbol" as const,
+          targetId: symbolId,
+          logicalCircuitId: currentCircuit.logicalCircuitId,
+        })),
+        ...targetNoteIds.map((textNoteId) => ({
+          targetType: "textNote" as const,
+          targetId: textNoteId,
+          logicalCircuitId: currentCircuit.logicalCircuitId,
+        })),
+      ];
+      if (!acquireCanvasSoftLocks(lockTargets)) {
+        return;
+      }
+
       const initialSymbolPositions = new Map<string, GridPoint>();
       const movedPointsKeySet = new Set<string>();
 
@@ -1675,9 +2196,12 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       }
     },
     [
+      acquireCanvasSoftLocks,
       currentCircuit.circuitSymbols,
+      currentCircuit.logicalCircuitId,
       currentCircuit.textNotes,
       currentCircuit.wires,
+      isCollabMutationBlocked,
     ],
   );
 
@@ -1707,9 +2231,14 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         panDragRef.current.startY = event.clientY;
       }
 
+      notifyUserViewportInteraction?.();
       setViewport(nextViewport);
     },
-    [setViewport, viewport],
+    [
+      notifyUserViewportInteraction,
+      setViewport,
+      viewport,
+    ],
   );
 
   React.useEffect(
@@ -1807,7 +2336,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         const pointerGrid = canvasToGrid(canvasPoint);
 
         // Prüfen, ob direkt auf einen Bauteil-Pin (Jam) geklickt wurde -> StartWire (analog zu JamMouseDown in EditorDiagram.cs)
-        if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !isSimulating) {
+        if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !isSimulating && !isCollabMutationBlocked) {
           const hitJam = findJamNear(canvasPoint, currentCircuit.circuitSymbols);
           if (hitJam) {
             selectEntities([], [], false, []);
@@ -1866,6 +2395,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       beginEntityDrag,
       currentCircuit.circuitSymbols,
       handleOpenSymbolProperties,
+      isCollabMutationBlocked,
       isSimulating,
       isSpacePressed,
       selectCircuitMap,
@@ -2020,7 +2550,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
   // Klick/Drag auf den Endpunkt-Griff (WirePointMarker) einer ausgewählten Leitung
   const handleWireEndpointPointerDown = React.useCallback(
     (event: React.PointerEvent<SVGCircleElement>, wire: Wire, endpoint: 1 | 2) => {
-      if (event.button !== 0 || isSpacePressed || isSimulating) {
+      if (event.button !== 0 || isSpacePressed || isSimulating || isCollabMutationBlocked) {
         return;
       }
       event.stopPropagation();
@@ -2072,6 +2602,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       beginEntityDrag,
       currentCircuit.conductorMap,
       currentCircuit.wires,
+      isCollabMutationBlocked,
       isSimulating,
       isSpacePressed,
       mergeWires,
@@ -2085,10 +2616,14 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
   // Klick/Drag auf ein Leitungssegment (analog zu SymbolMouseDown / MarkerMouseDown für Wire in EditorDiagram.cs)
   const handleWirePointerDown = React.useCallback(
     (event: React.PointerEvent<SVGElement>, wire: Wire) => {
-      if (isSimulating) {
+      if (isSimulating || isCollabMutationBlocked) {
         if (event.button === 0 && !isSpacePressed) {
           event.stopPropagation();
-          if (event.shiftKey || event.ctrlKey || event.metaKey) {
+          if (event.shiftKey && (event.ctrlKey || event.metaKey)) {
+            selectConductor(wire.wireId, "toggle");
+          } else if (event.shiftKey) {
+            selectConductor(wire.wireId, "replace");
+          } else if (event.ctrlKey || event.metaKey) {
             selectWire(wire.wireId, true);
           } else {
             selectEntities([], [], false, [wire.wireId]);
@@ -2229,6 +2764,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       beginEntityDrag,
       currentCircuit.conductorMap,
       currentCircuit.wires,
+      isCollabMutationBlocked,
       isSimulating,
       isSpacePressed,
       mergeWires,
@@ -2252,13 +2788,26 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       hx: 0 | 1 | 2,
       hy: 0 | 1 | 2,
     ) => {
-      if (event.button !== 0) {
+      if (event.button !== 0 || isCollabMutationBlocked) {
         return;
       }
       event.stopPropagation();
 
+      if (
+        !acquireCanvasSoftLocks([
+          {
+            targetType: "textNote",
+            targetId: textNote.textNoteId,
+            logicalCircuitId: currentCircuit.logicalCircuitId,
+          },
+        ])
+      ) {
+        return;
+      }
+
       const container = containerRef.current;
       if (!container) {
+        releaseCanvasSoftLocks();
         return;
       }
 
@@ -2288,7 +2837,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         containerRef.current.setPointerCapture(event.pointerId);
       }
     },
-    [viewport],
+    [
+      acquireCanvasSoftLocks,
+      currentCircuit.logicalCircuitId,
+      isCollabMutationBlocked,
+      releaseCanvasSoftLocks,
+      viewport,
+    ],
   );
 
   // Starten der Größenänderung an einem der 8 Anfasser eines Schaltungs-Bausteins
@@ -2299,13 +2854,26 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       hx: 0 | 1 | 2,
       hy: 0 | 1 | 2,
     ) => {
-      if (event.button !== 0) {
+      if (event.button !== 0 || isCollabMutationBlocked) {
         return;
       }
       event.stopPropagation();
 
+      if (
+        !acquireCanvasSoftLocks([
+          {
+            targetType: "symbol",
+            targetId: symbol.circuitSymbolId,
+            logicalCircuitId: currentCircuit.logicalCircuitId,
+          },
+        ])
+      ) {
+        return;
+      }
+
       const container = containerRef.current;
       if (!container) {
+        releaseCanvasSoftLocks();
         return;
       }
 
@@ -2352,8 +2920,12 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       }
     },
     [
+      acquireCanvasSoftLocks,
+      currentCircuit.logicalCircuitId,
       currentCircuit.wires,
+      isCollabMutationBlocked,
       project.pins,
+      releaseCanvasSoftLocks,
       viewport,
     ],
   );
@@ -2398,7 +2970,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         const canvasPoint = screenToCanvas({ x: startX, y: startY }, viewport);
 
         // Prüfen, ob nahe an einem Bauteil-Pin (Jam) oder Leitungsendpunkt auf dem freien Canvas geklickt wurde -> StartWire
-        if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !isSimulating) {
+        if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !isSimulating && !isCollabMutationBlocked) {
           const hitJam = findJamNear(canvasPoint, currentCircuit.circuitSymbols);
           if (hitJam) {
             selectEntities([], [], false, []);
@@ -2442,6 +3014,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     [
       currentCircuit,
       handleOpenCircuitProperties,
+      isCollabMutationBlocked,
       isSimulating,
       isSpacePressed,
       selectEntities,
@@ -2468,6 +3041,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       if (isPanning && panDragRef.current) {
         const deltaX = event.clientX - panDragRef.current.startX;
         const deltaY = event.clientY - panDragRef.current.startY;
+        if (deltaX !== 0 || deltaY !== 0) {
+          notifyUserViewportInteraction?.();
+        }
         const nextPanX = panDragRef.current.startPanX + deltaX;
         const nextPanY = panDragRef.current.startPanY + deltaY;
 
@@ -2481,6 +3057,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         const canvasPoint = screenToCanvas(screenPoint, currentViewport);
         const gridPoint = canvasToGrid(canvasPoint);
         setCursor({ grid: gridPoint, canvas: canvasPoint });
+        if (isCollabInSharedProject) {
+          collabUpdateLocalPresenceCursor?.({
+            x: canvasPoint.x,
+            y: canvasPoint.y,
+            logicalCircuitId: currentCircuit.logicalCircuitId,
+          });
+        }
         return;
       }
 
@@ -2488,6 +3071,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       const canvasPoint = screenToCanvas(screenPoint, viewport);
       const gridPoint = canvasToGrid(canvasPoint);
       setCursor({ grid: gridPoint, canvas: canvasPoint });
+      if (isCollabInSharedProject) {
+        collabUpdateLocalPresenceCursor?.({
+          x: canvasPoint.x,
+          y: canvasPoint.y,
+          logicalCircuitId: currentCircuit.logicalCircuitId,
+        });
+      }
 
       // Blockweises Verschieben des schwebenden Paste-/Verschiebe-Overlays ohne vorzeitiges Wire-Merging
       if (floatingDragRef.current) {
@@ -3010,7 +3600,9 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     },
     [
       activeSimulationMap,
+      collabUpdateLocalPresenceCursor,
       currentCircuit,
+      isCollabInSharedProject,
       isDraggingWireEndpoint,
       isMovingEntity,
       isPanning,
@@ -3020,6 +3612,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       isSimulating,
       moveSymbols,
       moveTextNotes,
+      notifyUserViewportInteraction,
       resizeCircuitSymbol,
       scopedCleanUpReport,
       selectedWireIds,
@@ -3177,6 +3770,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         }
         setIsResizingNote(false);
         noteResizeRef.current = null;
+        releaseCanvasSoftLocks();
       }
 
       if (isResizingSymbol) {
@@ -3262,6 +3856,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         }
         setIsResizingSymbol(false);
         symbolResizeRef.current = null;
+        releaseCanvasSoftLocks();
       }
 
       if (isMovingEntity) {
@@ -3373,6 +3968,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         }
         setIsMovingEntity(false);
         entityDragRef.current = null;
+        releaseCanvasSoftLocks();
       }
 
       if (isSelecting && selectionBox) {
@@ -3501,8 +4097,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       noteResizeRef.current = null;
       setSelectionBox(null);
       setCursor(null);
+      collabUpdateLocalPresenceCursor?.(null);
     },
-    [setButtonState, setCursor],
+    [
+      collabUpdateLocalPresenceCursor,
+      setButtonState,
+      setCursor,
+    ],
   );
 
   // Drag-and-Drop aus der Komponenten-Palette (mit Ghost-Vorschau) oder Projektdateien (.lcweb / .CircuitProject)
@@ -3523,6 +4124,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       if (
         activePaletteDrag?.type === "subCircuit" &&
         activePaletteDrag.subCircuitId &&
+        (!activePaletteDrag.libraryCircuitId || (isEditingLibrary && !activePaletteDrag.isBuiltInLibrary)) &&
         wouldCreateCircuitCycle(currentCircuit.logicalCircuitId, activePaletteDrag.subCircuitId, project)
       ) {
         event.dataTransfer.dropEffect = "none";
@@ -3556,6 +4158,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     [
       activePaletteDrag,
       currentCircuit.logicalCircuitId,
+      isEditingLibrary,
       isSimulating,
       project,
       viewport,
@@ -3605,6 +4208,10 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
       const droppedFile = event.dataTransfer?.files?.[0];
       if (droppedFile) {
+        if (isCollabNonHost) {
+          setFileDropError(t("collabSync.hostOnlyProjectActionTooltip"));
+          return;
+        }
         if (!isSupportedProjectFile(droppedFile.name)) {
           setFileDropError(t("canvas.drop.invalidFileType"));
           return;
@@ -3614,6 +4221,10 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
           return;
         }
         void importDroppedFile(droppedFile);
+        return;
+      }
+
+      if (isCollabMutationBlocked) {
         return;
       }
 
@@ -3635,6 +4246,24 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         const rawData = event.dataTransfer.getData("application/json");
         const selection: PaletteSelection | null = rawData ? JSON.parse(rawData) : activePaletteDrag;
         if (selection) {
+          if (selection.libraryCircuitId && libraryContext && importLibraryCircuit) {
+            if (
+              isEditingLibrary &&
+              !selection.isBuiltInLibrary &&
+              wouldCreateCircuitCycle(currentCircuit.logicalCircuitId, selection.libraryCircuitId, project)
+            ) {
+              return;
+            }
+            const sourceCircuits = selection.isBuiltInLibrary
+              ? libraryContext.builtInCircuits
+              : libraryContext.userCircuits;
+            const imported = importLibraryCircuit(sourceCircuits, selection.libraryCircuitId, { gridPoint });
+            if (imported.placedSymbol) {
+              selectEntities([imported.placedSymbol.circuitSymbolId], [], false, []);
+            }
+            return;
+          }
+
           if (
             selection.type === "subCircuit" &&
             selection.subCircuitId &&
@@ -3645,10 +4274,14 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
           if (selection.type === "textNote") {
             const newNote = addTextNote(t("palette.components.textNote"), gridPoint);
-            selectEntities([], [newNote.textNoteId], false, []);
+            if (newNote) {
+              selectEntities([], [newNote.textNoteId], false, []);
+            }
           } else {
             const newSymbol = addSymbol(selection, gridPoint);
-            selectEntities([newSymbol.circuitSymbolId], [], false, []);
+            if (newSymbol) {
+              selectEntities([newSymbol.circuitSymbolId], [], false, []);
+            }
           }
         }
       } catch (err) {
@@ -3662,7 +4295,12 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       currentCircuit.logicalCircuitId,
       hasUnsavedChanges,
       importDroppedFile,
+      importLibraryCircuit,
+      isCollabMutationBlocked,
+      isCollabNonHost,
+      isEditingLibrary,
       isSimulating,
+      libraryContext,
       project,
       selectEntities,
       t,
@@ -3754,6 +4392,48 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
     ],
   );
 
+  const ghostSubCircuit = React.useMemo(
+    () => {
+      if (dragGhost?.selection.type !== "subCircuit") {
+        return null;
+      }
+      if (dragGhost.selection.libraryCircuitId && libraryContext) {
+        const sourceCircuits = dragGhost.selection.isBuiltInLibrary
+          ? libraryContext.builtInCircuits
+          : libraryContext.userCircuits;
+        return getHydratedNativeCircuitsMap(sourceCircuits).get(dragGhost.selection.libraryCircuitId) ?? null;
+      }
+      if (dragGhost.selection.subCircuitId) {
+        return project.logicalCircuits.find(
+          (lc) => lc.logicalCircuitId === dragGhost.selection.subCircuitId,
+        ) ?? null;
+      }
+      return null;
+    },
+    [
+      dragGhost,
+      libraryContext,
+      project.logicalCircuits,
+    ],
+  );
+
+  const ghostSubCircuitSymbol = React.useMemo(
+    () => {
+      if (!ghostSubCircuit) {
+        return null;
+      }
+      return createCircuitSymbol(
+        ghostSubCircuit,
+        "__drag_ghost__",
+        0,
+        0,
+        "up",
+        `ghost-${ghostSubCircuit.logicalCircuitId}`,
+      );
+    },
+    [ghostSubCircuit],
+  );
+
   const ghostLayout = React.useMemo(
     () => {
       if (!dragGhost) {
@@ -3761,6 +4441,12 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
       }
       if (dragGhost.selection.type === "textNote") {
         return { gridWidth: 4, gridHeight: 1 };
+      }
+      if (dragGhost.selection.type === "subCircuit" && ghostSubCircuit) {
+        return {
+          gridWidth: ghostSubCircuit.symbolWidth,
+          gridHeight: ghostSubCircuit.symbolHeight,
+        };
       }
       const type = dragGhost.selection.type === "subCircuit" ? "and" : dragGhost.selection.type;
       return getComponentLayout(type, {
@@ -3772,13 +4458,24 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         bitWidth: dragGhost.selection.bitWidth,
         pinSide: dragGhost.selection.pinSide,
         color: dragGhost.selection.color,
+        pinCount: dragGhost.selection.pinCount,
+        pinBitWidth: dragGhost.selection.pinBitWidth,
+        clockwise: dragGhost.selection.clockwise,
+        sensorType: dragGhost.selection.sensorType,
         addressBitWidth: dragGhost.selection.addressBitWidth,
         dataBitWidth: dragGhost.selection.dataBitWidth,
+        bitsPerPixel: dragGhost.selection.bitsPerPixel,
+        width: dragGhost.selection.width,
+        height: dragGhost.selection.height,
+        zoom: dragGhost.selection.zoom,
         writeOn1: dragGhost.selection.writeOn1,
         dualPort: dragGhost.selection.dualPort,
+        frequency: dragGhost.selection.frequency,
+        waveform: dragGhost.selection.waveform,
+        synthesizerMode: dragGhost.selection.synthesizerMode,
       });
     },
-    [dragGhost],
+    [dragGhost, ghostSubCircuit],
   );
 
   const handleStartFloatingDrag = React.useCallback(
@@ -3855,7 +4552,16 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
   );
 
   return (
-    <main {...other} data-component="CircuitCanvas">
+    <main
+      {...other}
+      data-component="CircuitCanvas"
+      data-library-edit={isEditingLibrary ? "true" : undefined}
+      className={
+        [className, isEditingLibrary ? "library-edit-mode" : null]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+    >
       <svg
         ref={containerRef}
         className="schematic-viewport"
@@ -3900,6 +4606,8 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
 
               const isBad = Boolean(wire.markedBad);
               const isAiHighlighted = aiHighlightedIds?.wireIds.includes(wire.wireId) ?? false;
+              const foreignWireOwners = foreignWireSelectionMap.get(wire.wireId);
+              const primaryWireOwner = foreignWireOwners?.[0] ?? null;
               const wireCleanUp = scopedCleanUpReport?.wireInfoById.get(wire.wireId);
               const isCleanUpUnused = Boolean(wireCleanUp && !wireCleanUp.isUsed);
               const isCleanUpPartial = Boolean(wireCleanUp?.isPartiallyUsed);
@@ -3945,6 +4653,23 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
                       opacity={0.42}
                       pointerEvents="none"
                       className="wire-ai-highlight"
+                    />
+                  )}
+                  {/* Farbige Kennzeichnung fremdselektierter Leitungen anderer Teilnehmer */}
+                  {primaryWireOwner && (
+                    <line
+                      x1={wire.x1 * GRID_SIZE}
+                      y1={wire.y1 * GRID_SIZE}
+                      x2={wire.x2 * GRID_SIZE}
+                      y2={wire.y2 * GRID_SIZE}
+                      stroke={primaryWireOwner.color}
+                      strokeWidth={4.5}
+                      strokeLinecap="round"
+                      opacity={0.45}
+                      pointerEvents="none"
+                      className="wire-foreign-selection"
+                      data-testid={`wire-foreign-selection-${wire.wireId}`}
+                      data-selected-by={foreignWireOwners?.map((owner) => owner.displayName).join(", ")}
                     />
                   )}
                   {/* Breiter unsichtbarer Klick-Korridor für komfortable Maus-Interaktion */}
@@ -4067,6 +4792,12 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
               selectedSymbolIds.length === 0 &&
               selectedWireIds.length === 0;
 
+            const noteLock = foreignNoteLockMap.get(note.textNoteId) ?? null;
+            const noteLockColor = noteLock
+              ? (collabContext?.getParticipantColor?.(noteLock.ownerPeerId, noteLock.ownerDisplayName)
+                ?? pickAutoParticipantColor(new Set(), noteLock.ownerDisplayName))
+              : undefined;
+
             return (
               <TextNoteView
                 key={note.textNoteId}
@@ -4075,6 +4806,10 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
                 isCandidateSelected={isCandidateSelected}
                 isOnlySelected={isOnlySelected}
                 isAiHighlighted={aiHighlightedIds?.textNoteIds.includes(note.textNoteId) ?? false}
+                foreignLock={noteLock}
+                foreignLockColor={noteLockColor}
+                foreignSelections={foreignNoteSelectionMap.get(note.textNoteId)}
+                isReadOnly={isCollabMutationBlocked}
                 onTextNotePointerDown={handleTextNotePointerDown}
                 onTextNoteDoubleClick={() => handleOpenTextNoteEditor(note)}
                 onResizeHandlePointerDown={handleResizeHandlePointerDown}
@@ -4114,6 +4849,12 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
               selectedTextNoteIds.length === 0 &&
               selectedWireIds.length === 0;
 
+            const symbolLock = foreignSymbolLockMap.get(symbol.circuitSymbolId) ?? null;
+            const symbolLockColor = symbolLock
+              ? (collabContext?.getParticipantColor?.(symbolLock.ownerPeerId, symbolLock.ownerDisplayName)
+                ?? pickAutoParticipantColor(new Set(), symbolLock.ownerDisplayName))
+              : undefined;
+
             return (
               <CircuitSymbolView
                 key={symbol.circuitSymbolId}
@@ -4123,6 +4864,10 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
                 isOnlySelected={isOnlySelected}
                 isAiHighlighted={aiHighlightedIds?.symbolIds.includes(symbol.circuitSymbolId) ?? false}
                 isCleanUpDimmed={scopedCleanUpReport?.unusedSymbolIds.has(symbol.circuitSymbolId) ?? false}
+                foreignLock={symbolLock}
+                foreignLockColor={symbolLockColor}
+                foreignSelections={foreignSymbolSelectionMap.get(symbol.circuitSymbolId)}
+                isReadOnly={isCollabMutationBlocked}
                 onSymbolPointerDown={handleSymbolPointerDown}
                 onSymbolDoubleClick={(event, sym) => {
                   if (isSimulating) {
@@ -4277,7 +5022,14 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
                 strokeDasharray="4 2"
               />
               {dragGhost.selection.type === "subCircuit" ? (
-                <SubCircuitGlyph name={dragGhost.selection.name} />
+                ghostSubCircuitSymbol ? (
+                  <CircuitSymbolView
+                    symbol={ghostSubCircuitSymbol}
+                    isPreview={true}
+                  />
+                ) : (
+                  <SubCircuitGlyph name={dragGhost.selection.name} />
+                )
               ) : dragGhost.selection.type === "textNote" ? (
                 <text
                   x={8}
@@ -4297,15 +5049,27 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
                   notation={dragGhost.selection.notation}
                   isToggle={dragGhost.selection.isToggle}
                   pinSide={dragGhost.selection.pinSide}
+                  pins={"pins" in ghostLayout ? ghostLayout.pins : undefined}
                   color={dragGhost.selection.color}
                   rows={dragGhost.selection.rows}
                   columns={dragGhost.selection.columns}
                   matrixType={dragGhost.selection.matrixType}
                   cellShape={dragGhost.selection.cellShape}
+                  clockwise={dragGhost.selection.clockwise}
+                  pinCount={dragGhost.selection.pinCount}
+                  bitWidth={dragGhost.selection.bitWidth}
+                  sensorType={dragGhost.selection.sensorType}
                   addressBitWidth={dragGhost.selection.addressBitWidth}
                   dataBitWidth={dragGhost.selection.dataBitWidth}
+                  bitsPerPixel={dragGhost.selection.bitsPerPixel}
+                  graphicsWidth={dragGhost.selection.width}
+                  graphicsHeight={dragGhost.selection.height}
+                  graphicsZoom={dragGhost.selection.zoom}
                   writeOn1={dragGhost.selection.writeOn1}
                   dualPort={dragGhost.selection.dualPort}
+                  frequency={dragGhost.selection.frequency}
+                  waveform={dragGhost.selection.waveform}
+                  synthesizerMode={dragGhost.selection.synthesizerMode}
                 />
               )}
             </g>
@@ -4321,6 +5085,13 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         {/* Auswahlrahmen auf Bildschirm-Ebene */}
         <SelectionBox box={selectionBox} />
       </svg>
+
+      {/* Entkoppeltes Cursor-Overlay über dem Schaltungs-SVG */}
+      <CollabCursorOverlay
+        viewport={viewport}
+        activeCircuitId={currentCircuit.logicalCircuitId}
+        isEditingLibrary={isEditingLibrary}
+      />
 
       {/* Schwebender Pin- und Fehler-Tooltip beim Hovern über einen Jam / Fehlerpunkt */}
       {hoveredPinInfo !== null && (
@@ -4442,6 +5213,7 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
         isOpen={editingSymbol !== null || editingCircuit !== null}
         symbol={editingSymbol}
         circuit={editingCircuit}
+        accentVariant={isEditingLibrary ? "library" : "default"}
         onSaveSymbol={(symbolId, updates) => {
           updateCircuitSymbolProperties(symbolId, updates);
         }}
@@ -4510,6 +5282,20 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
           currentCircuit.textNotes.length > 0
         }
         canRotateSelection={selectedSymbolIds.length > 0 || selectedTextNoteIds.length > 0}
+        isReadOnly={isCollabMutationBlocked}
+        lockedByDisplayName={
+          contextTarget?.kind === "symbol"
+            ? (foreignSymbolLockMap.get(contextTarget.symbol.circuitSymbolId)?.ownerDisplayName ??
+              findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds)?.ownerDisplayName ??
+              null)
+            : contextTarget?.kind === "textNote"
+              ? (foreignNoteLockMap.get(contextTarget.textNote.textNoteId)?.ownerDisplayName ??
+                findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds)?.ownerDisplayName ??
+                null)
+              : contextTarget?.kind === "wire"
+                ? (findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds)?.ownerDisplayName ?? null)
+                : null
+        }
         onClose={() => setContextTarget(null)}
         onCut={() => {
           void cutSelectionToClipboard();
@@ -4524,13 +5310,37 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
           void pasteFromClipboard(gridPoint);
         }}
         onDeleteSelected={() => {
+          if (isCollabMutationBlocked) {
+            return;
+          }
+          const blockingLock = findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds);
+          if (blockingLock) {
+            collabContext?.reportSoftLockBlocked?.(blockingLock);
+            return;
+          }
           removeEntities(selectedSymbolIds, selectedTextNoteIds, selectedWireIds);
         }}
         onSelectAll={selectAllElements}
         onRotateRight={() => {
+          if (isCollabMutationBlocked) {
+            return;
+          }
+          const blockingLock = findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds);
+          if (blockingLock) {
+            collabContext?.reportSoftLockBlocked?.(blockingLock);
+            return;
+          }
           rotateSelectedSymbols("clockwise", { withWires: true });
         }}
         onRotateLeft={() => {
+          if (isCollabMutationBlocked) {
+            return;
+          }
+          const blockingLock = findFirstForeignLock(selectedSymbolIds, selectedTextNoteIds);
+          if (blockingLock) {
+            collabContext?.reportSoftLockBlocked?.(blockingLock);
+            return;
+          }
           rotateSelectedSymbols("counterClockwise", { withWires: true });
         }}
         onOpenSubCircuit={(circuitId) => {
@@ -4549,6 +5359,10 @@ const CircuitCanvas = styled(({ ...other }: CircuitCanvasProps) => {
   position: "relative",
   overflow: "hidden",
   backgroundColor: "var(--color-grid-canvas)",
+
+  "&.library-edit-mode": {
+    boxShadow: "inset 0 0 0 2px var(--color-library-accent)",
+  },
 
   "& > .schematic-viewport": {
     width: "100%",

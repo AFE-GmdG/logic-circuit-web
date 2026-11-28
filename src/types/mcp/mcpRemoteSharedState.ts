@@ -7,6 +7,7 @@ type McpRemoteSharedState = {
   connectedTabCount: number;
   sessionId: string | null;
   error: string | null;
+  sidecarBaseUrl?: string | null;
 };
 
 export default McpRemoteSharedState;

@@ -4,9 +4,13 @@ import ReactDOM from "react-dom";
 import styled from "@emotion/styled";
 import { useTranslation } from "react-i18next";
 
+import CollabContext from "../../contexts/collabContext";
+import LibraryContext from "../../contexts/libraryContext";
+
 import type TextNote from "../../types/circuit/textNote";
 import type TextNoteFontFamily from "../../types/circuit/textNoteFontFamily";
 import type TextNoteLineHeight from "../../types/circuit/textNoteLineHeight";
+import type { CollabSoftLockEntry } from "../../types/collab/modelSyncMessage";
 
 export type TextNoteModalSavePayload = {
   note: string;
@@ -48,6 +52,35 @@ const TextNoteModal = styled(({
   ...other
 }: TextNoteModalProps) => {
   const { t } = useTranslation();
+  const collabContext = React.useContext(CollabContext);
+  const libraryContext = React.useContext(LibraryContext);
+  const isEditingLibrary = libraryContext?.isEditingLibrary ?? false;
+  const isSharedCollabTarget = Boolean(isOpen && textNote && !isEditingLibrary && collabContext?.isInSession);
+  const isCollabReadOnly = Boolean(
+    isSharedCollabTarget &&
+    (collabContext?.modelSyncState?.isReadOnlyForGuest || collabContext?.modelSyncState?.isQuiesced),
+  );
+  const foreignLock: CollabSoftLockEntry | null = React.useMemo(
+    () => {
+      if (!isSharedCollabTarget || !textNote) {
+        return null;
+      }
+      const liveMatch = (collabContext?.modelSyncState?.softLocks ?? []).find(
+        (lock) =>
+          lock.targetType === "textNote" &&
+          lock.targetId === textNote.textNoteId &&
+          lock.ownerPeerId !== collabContext?.selfPeerId,
+      );
+      return liveMatch ?? collabContext?.getForeignLockForTarget?.("textNote", textNote.textNoteId) ?? null;
+    },
+    [
+      collabContext,
+      isSharedCollabTarget,
+      textNote,
+    ],
+  );
+  const isDialogReadOnly = isCollabReadOnly || foreignLock !== null;
+
   const [note, setNote] = React.useState<string>(() => textNote?.note ?? "");
   const [fontFamily, setFontFamily] = React.useState<TextNoteFontFamily>(() => textNote?.fontFamily ?? "mono");
   const [lineHeight, setLineHeight] = React.useState<TextNoteLineHeight>(() => textNote?.lineHeight ?? 18);
@@ -56,6 +89,39 @@ const TextNoteModal = styled(({
   );
   const [customLineHeights, setCustomLineHeights] = React.useState<(TextNoteLineHeight | undefined)[]>(
     () => (textNote?.lineHeights ? [...textNote.lineHeights] : []),
+  );
+
+  const lockTargetNoteId = isSharedCollabTarget ? textNote?.textNoteId : undefined;
+  const lockTargetCircuitId = isSharedCollabTarget ? textNote?.logicalCircuitId : undefined;
+  const acquireSoftLocks = collabContext?.acquireSoftLocks;
+  const releaseSoftLocks = collabContext?.releaseSoftLocks;
+
+  React.useEffect(
+    () => {
+      if (!isOpen || !lockTargetNoteId || !lockTargetCircuitId || isCollabReadOnly) {
+        return undefined;
+      }
+      const target = {
+        targetType: "textNote" as const,
+        targetId: lockTargetNoteId,
+        logicalCircuitId: lockTargetCircuitId,
+      };
+      const result = acquireSoftLocks?.([target], "text-note-dialog");
+      if (result && !result.ok) {
+        return undefined;
+      }
+      return () => {
+        releaseSoftLocks?.([{ targetType: "textNote", targetId: lockTargetNoteId }]);
+      };
+    },
+    [
+      acquireSoftLocks,
+      isCollabReadOnly,
+      isOpen,
+      lockTargetCircuitId,
+      lockTargetNoteId,
+      releaseSoftLocks,
+    ],
   );
 
   // Synchronisiert die Formulardaten mit der übergebenen Text-Notiz beim Öffnen
@@ -85,6 +151,9 @@ const TextNoteModal = styled(({
 
   const handleSave = React.useCallback(
     () => {
+      if (isDialogReadOnly) {
+        return;
+      }
       let resolvedLineHeights: TextNoteLineHeight[] | undefined = undefined;
       if (customLinesEnabled) {
         resolvedLineHeights = lines.map((_, index) => customLineHeights[index] ?? lineHeight);
@@ -102,6 +171,7 @@ const TextNoteModal = styled(({
       customLineHeights,
       customLinesEnabled,
       fontFamily,
+      isDialogReadOnly,
       lineHeight,
       lines,
       note,
@@ -173,6 +243,17 @@ const TextNoteModal = styled(({
         </div>
 
         <div className="modal-body">
+          {isDialogReadOnly && (
+            <div
+              className={`collab-dialog-banner${foreignLock ? " is-locked" : " is-readonly"}`}
+              data-testid={foreignLock ? "text-note-lock-banner" : "text-note-readonly-banner"}
+              role="status"
+            >
+              {foreignLock
+                ? t("collabSync.dialogLockedBanner", { name: foreignLock.ownerDisplayName })
+                : t("collabSync.dialogGuestReadOnlyBanner")}
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="note-text-input" className="form-label">
               {t("dialog.textNote.contentLabel")}
@@ -181,6 +262,7 @@ const TextNoteModal = styled(({
               id="note-text-input"
               className="note-textarea"
               rows={5}
+              readOnly={isDialogReadOnly}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={t("dialog.textNote.contentPlaceholder")}
@@ -288,6 +370,7 @@ const TextNoteModal = styled(({
             <button
               type="button"
               className="btn btn-primary"
+              disabled={isDialogReadOnly}
               onClick={handleSave}
             >
               {t("common.save")}
@@ -374,6 +457,17 @@ const TextNoteModal = styled(({
       display: "flex",
       flexDirection: "column",
       gap: "0.85rem",
+
+      "& > .collab-dialog-banner": {
+        padding: "0.55rem 0.75rem",
+        borderRadius: "0.375rem",
+        fontSize: "0.8125rem",
+        fontWeight: 600,
+        lineHeight: 1.35,
+        backgroundColor: "var(--color-warning-bg)",
+        border: "1px solid var(--color-warning-border)",
+        color: "var(--color-text-primary)",
+      },
 
       "& .form-row": {
         display: "flex",

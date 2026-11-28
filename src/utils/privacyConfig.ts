@@ -2,12 +2,7 @@ import type PrivacyConfig from "../types/privacyConfig";
 
 import { MCP_PRIVACY_PATH } from "../mcp/mcpEvents";
 
-const EMPTY_PRIVACY_CONFIG: PrivacyConfig = {
-  responsibleName: "",
-  responsibleAddress: "",
-  contactEmail: "",
-  hostingLocation: "",
-};
+import { loadSidecarBaseUrl, resolveEffectiveSidecarBaseUrl } from "./sidecarStorage";
 
 function readStringField(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -15,10 +10,6 @@ function readStringField(value: unknown): string {
 
 // Liefert die zur Build-Zeit eingebetteten Datenschutz-Standardwerte (falls gesetzt)
 export function getBuildPrivacyConfig(): PrivacyConfig {
-  if (typeof process === "undefined" || !process.env) {
-    return { ...EMPTY_PRIVACY_CONFIG };
-  }
-
   return {
     responsibleName: readStringField(process.env.PRIVACY_RESPONSIBLE_NAME),
     responsibleAddress: readStringField(process.env.PRIVACY_RESPONSIBLE_ADDRESS),
@@ -52,13 +43,22 @@ export function mergePrivacyConfig(
 // Lädt optionale Runtime-Betreiberangaben vom Sidecar-/Dev-Endpunkt (/__mcp/privacy)
 export async function fetchRuntimePrivacyConfig(
   signal?: AbortSignal,
+  baseUrl?: string,
 ): Promise<Partial<PrivacyConfig> | null> {
   if (typeof fetch !== "function") {
     return null;
   }
 
+  const effectiveBaseUrl = resolveEffectiveSidecarBaseUrl({ customBaseUrl: baseUrl });
+  if (!effectiveBaseUrl) {
+    return null;
+  }
+
+  const hasExplicitOrStoredUrl = (baseUrl ?? loadSidecarBaseUrl()).trim().length > 0;
+  const endpoint = hasExplicitOrStoredUrl ? `${effectiveBaseUrl}${MCP_PRIVACY_PATH}` : MCP_PRIVACY_PATH;
+
   try {
-    const response = await fetch(MCP_PRIVACY_PATH, {
+    const response = await fetch(endpoint, {
       method: "GET",
       cache: "no-store",
       signal,

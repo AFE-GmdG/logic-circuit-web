@@ -12,6 +12,13 @@ export type CanvasClipboardActions = {
   pasteFromClipboard: () => Promise<void>;
 };
 
+export type CanvasCenterFocusTarget = {
+  centerX: number;
+  centerY: number;
+  zoom?: number;
+  circuitId?: string;
+};
+
 type CanvasContextType = {
   viewport: ViewportTransform;
   setViewport: React.Dispatch<React.SetStateAction<ViewportTransform>>;
@@ -37,6 +44,10 @@ type CanvasContextType = {
   selectAll?: () => void;
   registerFocusGridPoint?: (action: ((point: GridPoint, circuitId?: string) => void) | null) => void;
   focusGridPoint?: (point: GridPoint, circuitId?: string) => void;
+  registerFocusCanvasCenter?: (action: ((target: CanvasCenterFocusTarget) => void) | null) => void;
+  focusCanvasCenter?: (target: CanvasCenterFocusTarget) => void;
+  notifyUserViewportInteraction?: () => void;
+  subscribeUserViewportInteraction?: (listener: () => void) => () => void;
   registerOpenFindBar?: (action: (() => void) | null) => void;
   openFindBar?: () => void;
 };

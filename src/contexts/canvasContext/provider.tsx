@@ -1,6 +1,9 @@
 import React from "react";
 
-import CanvasContext, { type CanvasClipboardActions } from ".";
+import CanvasContext, {
+  type CanvasCenterFocusTarget,
+  type CanvasClipboardActions,
+} from ".";
 
 import type AiHighlightState from "../../types/canvas/aiHighlightState";
 import type CursorPosition from "../../types/canvas/cursorPosition";
@@ -123,45 +126,70 @@ const CanvasContextProvider: React.FC<CanvasContextProviderProps> = ({ children 
     [],
   );
 
+  const userViewportListenersRef = React.useRef<Set<() => void>>(new Set());
+
+  const notifyUserViewportInteraction = React.useCallback(
+    () => {
+      for (const listener of userViewportListenersRef.current) {
+        listener();
+      }
+    },
+    [],
+  );
+
+  const subscribeUserViewportInteraction = React.useCallback(
+    (listener: () => void) => {
+      userViewportListenersRef.current.add(listener);
+      return () => {
+        userViewportListenersRef.current.delete(listener);
+      };
+    },
+    [],
+  );
+
   const zoomIn = React.useCallback(
     () => {
+      notifyUserViewportInteraction();
       setViewport((prev) => ({
         ...prev,
         zoom: clampZoom(prev.zoom * 1.2),
       }));
     },
-    [],
+    [notifyUserViewportInteraction],
   );
 
   const zoomOut = React.useCallback(
     () => {
+      notifyUserViewportInteraction();
       setViewport((prev) => ({
         ...prev,
         zoom: clampZoom(prev.zoom / 1.2),
       }));
     },
-    [],
+    [notifyUserViewportInteraction],
   );
 
   const resetZoom = React.useCallback(
     () => {
+      notifyUserViewportInteraction();
       setViewport((prev) => ({
         ...prev,
         zoom: DEFAULT_ZOOM,
       }));
     },
-    [],
+    [notifyUserViewportInteraction],
   );
 
   const resetView = React.useCallback(
     () => {
+      notifyUserViewportInteraction();
       setViewport({
         panX: DEFAULT_ORIGIN_OFFSET,
         panY: DEFAULT_ORIGIN_OFFSET,
         zoom: DEFAULT_ZOOM,
       });
     },
-    [],
+    [notifyUserViewportInteraction],
   );
 
   const [hasClipboardContent, setHasClipboardContent] = React.useState<boolean>(
@@ -171,6 +199,7 @@ const CanvasContextProvider: React.FC<CanvasContextProviderProps> = ({ children 
   const clipboardActionsRef = React.useRef<CanvasClipboardActions | null>(null);
   const selectAllActionRef = React.useRef<(() => void) | null>(null);
   const focusGridPointActionRef = React.useRef<((point: GridPoint, circuitId?: string) => void) | null>(null);
+  const focusCanvasCenterActionRef = React.useRef<((target: CanvasCenterFocusTarget) => void) | null>(null);
   const openFindBarActionRef = React.useRef<(() => void) | null>(null);
 
   const registerClipboardActions = React.useCallback(
@@ -190,6 +219,13 @@ const CanvasContextProvider: React.FC<CanvasContextProviderProps> = ({ children 
   const registerFocusGridPoint = React.useCallback(
     (action: ((point: GridPoint, circuitId?: string) => void) | null) => {
       focusGridPointActionRef.current = action;
+    },
+    [],
+  );
+
+  const registerFocusCanvasCenter = React.useCallback(
+    (action: ((target: CanvasCenterFocusTarget) => void) | null) => {
+      focusCanvasCenterActionRef.current = action;
     },
     [],
   );
@@ -292,6 +328,13 @@ const CanvasContextProvider: React.FC<CanvasContextProviderProps> = ({ children 
     [],
   );
 
+  const focusCanvasCenter = React.useCallback(
+    (target: CanvasCenterFocusTarget) => {
+      focusCanvasCenterActionRef.current?.(target);
+    },
+    [],
+  );
+
   const openFindBar = React.useCallback(
     () => {
       openFindBarActionRef.current?.();
@@ -326,6 +369,10 @@ const CanvasContextProvider: React.FC<CanvasContextProviderProps> = ({ children 
         selectAll,
         registerFocusGridPoint,
         focusGridPoint,
+        registerFocusCanvasCenter,
+        focusCanvasCenter,
+        notifyUserViewportInteraction,
+        subscribeUserViewportInteraction,
         registerOpenFindBar,
         openFindBar,
       }}

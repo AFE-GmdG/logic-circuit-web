@@ -24,6 +24,8 @@ export type CanvasContextMenuProps = Omit<React.ComponentPropsWithoutRef<"div">,
   canPaste: boolean;
   hasCircuitElements: boolean;
   canRotateSelection: boolean;
+  isReadOnly?: boolean;
+  lockedByDisplayName?: string | null;
   onClose: () => void;
   onCut: () => void;
   onCopy: () => void;
@@ -90,6 +92,8 @@ export function buildCanvasContextMenuItems({
   canPaste,
   hasCircuitElements,
   canRotateSelection,
+  isReadOnly = false,
+  lockedByDisplayName = null,
   onCut,
   onCopy,
   onCopyForDesktop,
@@ -105,12 +109,22 @@ export function buildCanvasContextMenuItems({
   onSelectConductor,
   onSplitWire,
   t: translateArg,
-}: Omit<CanvasContextMenuProps, "onClose"> & { t?: (key: string) => string }): ContextMenuItem[] {
-  const t = translateArg ?? i18n.t.bind(i18n);
+}: Omit<CanvasContextMenuProps, "onClose"> & {
+  t?: (key: string, options?: Record<string, string>) => string;
+}): ContextMenuItem[] {
+  const t = translateArg ?? ((key: string, options?: Record<string, string>) =>
+    String(options ? i18n.t(key, options) : i18n.t(key)));
 
   if (!target) {
     return [];
   }
+
+  const isMutationBlocked = Boolean(isReadOnly || lockedByDisplayName);
+  const blockedTooltip = lockedByDisplayName
+    ? t("collabSync.lockedByTooltip", { name: lockedByDisplayName })
+    : isReadOnly
+      ? t("collabSync.guestReadOnlyTooltip")
+      : undefined;
 
   if (target.kind === "canvas") {
     return [
@@ -118,8 +132,12 @@ export function buildCanvasContextMenuItems({
         id: "canvas-paste",
         label: t("canvas.contextMenu.paste"),
         shortcut: t("canvas.contextMenu.shortcutPaste"),
-        disabled: !canPaste,
-        tooltip: !canPaste ? t("canvas.contextMenu.emptyClipboardTooltip") : undefined,
+        disabled: !canPaste || isReadOnly,
+        tooltip: isReadOnly
+          ? t("collabSync.guestReadOnlyTooltip")
+          : !canPaste
+            ? t("canvas.contextMenu.emptyClipboardTooltip")
+            : undefined,
         onSelect: () => onPasteAt(target.gridPoint),
       },
       {
@@ -145,6 +163,8 @@ export function buildCanvasContextMenuItems({
       id: "ctx-cut",
       label: t("canvas.contextMenu.cut"),
       shortcut: t("canvas.contextMenu.shortcutCut"),
+      disabled: isMutationBlocked,
+      tooltip: isMutationBlocked ? blockedTooltip : undefined,
       onSelect: onCut,
     },
     {
@@ -168,6 +188,8 @@ export function buildCanvasContextMenuItems({
       label: t("canvas.contextMenu.delete"),
       shortcut: t("canvas.contextMenu.shortcutDelete"),
       danger: true,
+      disabled: isMutationBlocked,
+      tooltip: isMutationBlocked ? blockedTooltip : undefined,
       onSelect: onDeleteSelected,
     },
   ];
@@ -181,14 +203,16 @@ export function buildCanvasContextMenuItems({
         label: t("canvas.contextMenu.rotateRight"),
         shortcut: t("canvas.contextMenu.shortcutRotateRight"),
         separatorBefore: true,
-        disabled: !canRotateSelection,
+        disabled: !canRotateSelection || isMutationBlocked,
+        tooltip: isMutationBlocked ? blockedTooltip : undefined,
         onSelect: onRotateRight,
       },
       {
         id: "ctx-rotate-left",
         label: t("canvas.contextMenu.rotateLeft"),
         shortcut: t("canvas.contextMenu.shortcutRotateLeft"),
-        disabled: !canRotateSelection,
+        disabled: !canRotateSelection || isMutationBlocked,
+        tooltip: isMutationBlocked ? blockedTooltip : undefined,
         onSelect: onRotateLeft,
       },
     ];
@@ -242,10 +266,14 @@ export function buildCanvasContextMenuItems({
     {
       id: "ctx-split-wire",
       label: t("canvas.contextMenu.splitWire"),
-      disabled: splitPoint === null,
-      tooltip: splitPoint === null ? t("canvas.contextMenu.splitWireTooltip") : undefined,
+      disabled: splitPoint === null || isReadOnly,
+      tooltip: isReadOnly
+        ? t("collabSync.guestReadOnlyTooltip")
+        : splitPoint === null
+          ? t("canvas.contextMenu.splitWireTooltip")
+          : undefined,
       onSelect: () => {
-        if (splitPoint) {
+        if (splitPoint && !isReadOnly) {
           onSplitWire(target.wire.wireId, splitPoint);
         }
       },
@@ -259,6 +287,8 @@ const CanvasContextMenu = ({
   canPaste,
   hasCircuitElements,
   canRotateSelection,
+  isReadOnly = false,
+  lockedByDisplayName = null,
   onClose,
   onCut,
   onCopy,
@@ -283,6 +313,8 @@ const CanvasContextMenu = ({
     canPaste,
     hasCircuitElements,
     canRotateSelection,
+    isReadOnly,
+    lockedByDisplayName,
     onCut,
     onCopy,
     onCopyForDesktop,
@@ -297,7 +329,7 @@ const CanvasContextMenu = ({
     onEditCurrentCircuit,
     onSelectConductor,
     onSplitWire,
-    t,
+    t: (key, options) => (options ? t(key, options) : t(key)),
   });
 
   return (

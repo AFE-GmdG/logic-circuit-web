@@ -3,6 +3,8 @@ import React from "react";
 import styled from "@emotion/styled";
 import { useTranslation } from "react-i18next";
 
+import { isCollabDisabledByEnv } from "../../utils/collabIceConfig";
+
 export type MainMenuCategoryId = "file" | "edit" | "circuit" | "view" | "help";
 
 export type MainMenuItem = {
@@ -76,6 +78,18 @@ export type MainMenuProps = React.ComponentPropsWithoutRef<"div"> & {
   onOpenOptions: () => void;
   onOpenPrivacy?: () => void;
   onOpenHelp: () => void;
+  onOpenByoSidecar?: () => void;
+  onOpenSidecarDownload?: () => void;
+  isCollabDisabled?: boolean;
+  isCollabInSession?: boolean;
+  isCollabHost?: boolean;
+  isCollabReadOnly?: boolean;
+  isCollabNonHost?: boolean;
+  isCollabParticipantsPanelOpen?: boolean;
+  onStartCollabSession?: () => void;
+  onJoinCollabSession?: () => void;
+  onToggleCollabParticipantsPanel?: () => void;
+  onEndOrLeaveCollabSession?: () => void;
 };
 
 // Strukturiertes Hamburger-Hauptmenü mit Untermenüs für Datei, Bearbeiten, Schaltung, Ansicht und Hilfe
@@ -133,9 +147,22 @@ const MainMenu = styled(({
   onOpenOptions,
   onOpenPrivacy,
   onOpenHelp,
+  onOpenByoSidecar,
+  onOpenSidecarDownload,
+  isCollabDisabled,
+  isCollabInSession = false,
+  isCollabHost = false,
+  isCollabReadOnly = false,
+  isCollabNonHost = false,
+  isCollabParticipantsPanelOpen = false,
+  onStartCollabSession,
+  onJoinCollabSession,
+  onToggleCollabParticipantsPanel,
+  onEndOrLeaveCollabSession,
   ...other
 }: MainMenuProps) => {
   const { t } = useTranslation();
+  const effectiveCollabDisabled = isCollabDisabled ?? isCollabDisabledByEnv();
   const [activeCategory, setActiveCategory] = React.useState<MainMenuCategoryId>(initialCategory);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const categoryButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
@@ -204,7 +231,17 @@ const MainMenu = styled(({
         ? (deleteCircuitDisabledReason ?? t("menu.deleteCircuitFallbackDisabled"))
         : isSimulating
           ? t("menu.disabledWhileSimulating")
-          : t("menu.deleteCircuitTooltip");
+          : isCollabReadOnly
+            ? t("collabSync.guestReadOnlyTooltip")
+            : t("menu.deleteCircuitTooltip");
+
+      const replaceProjectDisabled = isSimulating || isCollabNonHost;
+      const replaceProjectTooltip = (defaultKey: string) =>
+        isSimulating
+          ? t("menu.disabledWhileSimulating")
+          : isCollabNonHost
+            ? t("collabSync.hostOnlyProjectActionTooltip")
+            : t(defaultKey);
 
       return [
         {
@@ -214,24 +251,22 @@ const MainMenu = styled(({
             {
               id: "file-new",
               label: t("menu.items.fileNew"),
-              disabled: isSimulating,
-              tooltip: isSimulating ? t("menu.disabledWhileSimulating") : t("menu.items.fileNewTooltip"),
+              disabled: replaceProjectDisabled,
+              tooltip: replaceProjectTooltip("menu.items.fileNewTooltip"),
               onSelect: onNewProject,
             },
             {
               id: "file-demo",
               label: t("menu.items.fileDemo"),
-              disabled: isSimulating,
-              tooltip: isSimulating ? t("menu.disabledWhileSimulating") : t("menu.items.fileDemoTooltip"),
+              disabled: replaceProjectDisabled,
+              tooltip: replaceProjectTooltip("menu.items.fileDemoTooltip"),
               onSelect: onLoadDemo,
             },
             {
               id: "file-import",
               label: t("menu.items.fileImport"),
-              disabled: isSimulating,
-              tooltip: isSimulating
-                ? t("menu.disabledWhileSimulating")
-                : t("menu.items.fileImportTooltip"),
+              disabled: replaceProjectDisabled,
+              tooltip: replaceProjectTooltip("menu.items.fileImportTooltip"),
               onSelect: onImportProject,
             },
             {
@@ -275,12 +310,54 @@ const MainMenu = styled(({
             {
               id: "file-project-settings",
               label: t("menu.items.fileProjectSettings"),
-              disabled: isSimulating,
+              disabled: isSimulating || isCollabReadOnly,
               tooltip: isSimulating
                 ? t("menu.disabledWhileSimulating")
-                : t("menu.items.fileProjectSettingsTooltip"),
+                : isCollabReadOnly
+                  ? t("collabSync.guestReadOnlyTooltip")
+                  : t("menu.items.fileProjectSettingsTooltip"),
               onSelect: onOpenProjectSettings,
             },
+            ...(!effectiveCollabDisabled
+              ? isCollabInSession
+                ? [
+                  {
+                    id: "file-collab-panel",
+                    label: t("menu.items.fileCollabPanel"),
+                    checked: isCollabParticipantsPanelOpen,
+                    separatorBefore: true,
+                    tooltip: t("menu.items.fileCollabPanelTooltip"),
+                    onSelect: onToggleCollabParticipantsPanel,
+                  },
+                  {
+                    id: "file-collab-end-leave",
+                    label: isCollabHost
+                      ? t("menu.items.fileCollabEndHost")
+                      : t("menu.items.fileCollabLeavePeer"),
+                    tooltip: isCollabHost
+                      ? t("menu.items.fileCollabEndHostTooltip")
+                      : t("menu.items.fileCollabLeavePeerTooltip"),
+                    onSelect: onEndOrLeaveCollabSession,
+                  },
+                ]
+                : [
+                  {
+                    id: "file-collab-start",
+                    label: t("menu.items.fileCollabStart"),
+                    separatorBefore: true,
+                    disabled: !onStartCollabSession,
+                    tooltip: t("menu.items.fileCollabStartTooltip"),
+                    onSelect: onStartCollabSession,
+                  },
+                  {
+                    id: "file-collab-join",
+                    label: t("menu.items.fileCollabJoin"),
+                    disabled: !onJoinCollabSession,
+                    tooltip: t("menu.items.fileCollabJoinTooltip"),
+                    onSelect: onJoinCollabSession,
+                  },
+                ]
+              : []),
           ],
         },
         {
@@ -291,16 +368,24 @@ const MainMenu = styled(({
               id: "edit-undo",
               label: t("menu.items.editUndo"),
               shortcut: t("menu.shortcuts.undo"),
-              disabled: isSimulating || !canUndo,
-              tooltip: !canUndo ? t("menu.items.editUndoDisabledTooltip") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !canUndo,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !canUndo
+                  ? t("menu.items.editUndoDisabledTooltip")
+                  : undefined,
               onSelect: onUndo,
             },
             {
               id: "edit-redo",
               label: t("menu.items.editRedo"),
               shortcut: t("menu.shortcuts.redo"),
-              disabled: isSimulating || !canRedo,
-              tooltip: !canRedo ? t("menu.items.editRedoDisabledTooltip") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !canRedo,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !canRedo
+                  ? t("menu.items.editRedoDisabledTooltip")
+                  : undefined,
               onSelect: onRedo,
             },
             {
@@ -308,8 +393,12 @@ const MainMenu = styled(({
               label: t("menu.items.editCut"),
               shortcut: t("menu.shortcuts.cut"),
               separatorBefore: true,
-              disabled: isSimulating || !hasSelection || !onCut,
-              tooltip: !hasSelection ? t("menu.items.editDisabledNoSelection") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !hasSelection || !onCut,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !hasSelection
+                  ? t("menu.items.editDisabledNoSelection")
+                  : undefined,
               onSelect: onCut,
             },
             {
@@ -333,8 +422,12 @@ const MainMenu = styled(({
               id: "edit-paste",
               label: t("menu.items.editPaste"),
               shortcut: t("menu.shortcuts.paste"),
-              disabled: isSimulating || !canPaste || !onPaste,
-              tooltip: !canPaste ? t("menu.items.editDisabledEmptyClipboard") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !canPaste || !onPaste,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !canPaste
+                  ? t("menu.items.editDisabledEmptyClipboard")
+                  : undefined,
               onSelect: onPaste,
             },
             {
@@ -342,8 +435,12 @@ const MainMenu = styled(({
               label: t("menu.items.editDelete"),
               shortcut: t("menu.shortcuts.delete"),
               separatorBefore: true,
-              disabled: isSimulating || !hasSelection,
-              tooltip: !hasSelection ? t("menu.items.editDisabledNoSelection") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !hasSelection,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !hasSelection
+                  ? t("menu.items.editDisabledNoSelection")
+                  : undefined,
               onSelect: onDeleteSelected,
             },
             {
@@ -359,16 +456,24 @@ const MainMenu = styled(({
               label: t("menu.items.editRotateRight"),
               shortcut: t("menu.shortcuts.rotateRight"),
               separatorBefore: true,
-              disabled: isSimulating || !hasSymbolSelection,
-              tooltip: !hasSymbolSelection ? t("menu.items.editDisabledNoSymbolSelection") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !hasSymbolSelection,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !hasSymbolSelection
+                  ? t("menu.items.editDisabledNoSymbolSelection")
+                  : undefined,
               onSelect: onRotateRight,
             },
             {
               id: "edit-rotate-left",
               label: t("menu.items.editRotateLeft"),
               shortcut: t("menu.shortcuts.rotateLeft"),
-              disabled: isSimulating || !hasSymbolSelection,
-              tooltip: !hasSymbolSelection ? t("menu.items.editDisabledNoSymbolSelection") : undefined,
+              disabled: isSimulating || isCollabReadOnly || !hasSymbolSelection,
+              tooltip: isCollabReadOnly
+                ? t("collabSync.guestReadOnlyTooltip")
+                : !hasSymbolSelection
+                  ? t("menu.items.editDisabledNoSymbolSelection")
+                  : undefined,
               onSelect: onRotateLeft,
             },
           ],
@@ -387,13 +492,14 @@ const MainMenu = styled(({
             {
               id: "circuit-new",
               label: t("menu.items.circuitNew"),
-              disabled: isSimulating,
+              disabled: isSimulating || isCollabReadOnly,
+              tooltip: isCollabReadOnly ? t("collabSync.guestReadOnlyTooltip") : undefined,
               onSelect: onCreateCircuit,
             },
             {
               id: "circuit-delete",
               label: t("menu.items.circuitDelete"),
-              disabled: isSimulating || !canDeleteCurrentCircuit,
+              disabled: isSimulating || isCollabReadOnly || !canDeleteCurrentCircuit,
               tooltip: deleteCircuitTooltip,
               onSelect: onDeleteCurrentCircuit,
             },
@@ -500,6 +606,21 @@ const MainMenu = styled(({
               label: t("menu.items.helpShortcuts"),
               onSelect: onOpenHelp,
             },
+            {
+              id: "help-byo-sidecar",
+              label: t("menu.items.helpByoSidecar"),
+              separatorBefore: true,
+              disabled: !onOpenByoSidecar,
+              tooltip: t("menu.items.helpByoSidecarTooltip"),
+              onSelect: onOpenByoSidecar,
+            },
+            {
+              id: "help-download-sidecar",
+              label: t("menu.items.helpDownloadSidecar"),
+              disabled: !onOpenSidecarDownload,
+              tooltip: t("menu.items.helpDownloadSidecarTooltip"),
+              onSelect: onOpenSidecarDownload,
+            },
           ],
         },
       ];
@@ -513,10 +634,16 @@ const MainMenu = styled(({
       canRedo,
       canUndo,
       deleteCircuitDisabledReason,
+      effectiveCollabDisabled,
       hasCircuitElements,
       hasSelection,
       hasSymbolSelection,
       isCleanUpVisualizationEnabled,
+      isCollabHost,
+      isCollabInSession,
+      isCollabNonHost,
+      isCollabParticipantsPanelOpen,
+      isCollabReadOnly,
       isPaused,
       isRunning,
       isSimulating,
@@ -527,12 +654,15 @@ const MainMenu = styled(({
       onDeleteCurrentCircuit,
       onDeleteSelected,
       onEditCurrentCircuit,
+      onEndOrLeaveCollabSession,
       onExportDesktopXml,
       onExportHdl,
       onExportImage,
       onImportProject,
+      onJoinCollabSession,
       onLoadDemo,
       onNewProject,
+      onOpenByoSidecar,
       onOpenHelp,
       onOpenOptions,
       onOpenOscilloscope,
@@ -540,6 +670,7 @@ const MainMenu = styled(({
       onOpenProjectSettings,
       onOpenReport,
       onOpenSearch,
+      onOpenSidecarDownload,
       onOpenTruthTable,
       onOpenUsage,
       onPaste,
@@ -549,9 +680,11 @@ const MainMenu = styled(({
       onSaveProject,
       onSaveProjectAs,
       onSelectAll,
+      onStartCollabSession,
       onStepSimulation,
       onStopSimulation,
       onToggleCleanUpVisualization,
+      onToggleCollabParticipantsPanel,
       onToggleSimulation,
       onUndo,
       t,
